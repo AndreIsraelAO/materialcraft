@@ -9,3 +9,4 @@ target/
 /temp
 /craft-fonts
 *.mcraft.tmp
+.claude/worktrees/
