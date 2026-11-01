@@ -12,7 +12,7 @@ L0  core      document model: Package → Graph → Node / Connection / Frame / 
 L0  image     Image: grayscale or RGBA f32 planes behind an Arc (copy-on-write, free to share);
               wrap/clamp sampling, bilinear, box/bilinear resampling, sRGB, 8-bit display
 L0  geom      meshes, primitives (rounded cube, sphere, cylinder, plane, torus, material ball), BVH, camera
-L1  nodes     the node library: NodeDef (ports, parameters, category, cook fn) for ~120 nodes, the
+L1  nodes     the node library: NodeDef (ports, parameters, category, cook fn) for 227 nodes, the
               tileable noise primitives, shared image ops (blur, EDT, HSL, blend modes) and the
               function-graph compiler/evaluator for pixel and value processors
 L2  eval      cooking: topological order, output sizes (relative to input / parent, absolute, preview

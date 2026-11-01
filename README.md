@@ -128,6 +128,7 @@ cargo run --release -p materialcraft-cli -- mcp               # MCP server (stdi
 cargo run --release -p materialcraft-cli -- new wood wood.mcraft
 cargo run --release -p materialcraft-cli -- render wood.mcraft wood.png --scene material_ball --full
 cargo run --release -p materialcraft-cli -- export wood.mcraft textures --format png --depth 16
+cargo run --release -p materialcraft-cli -- export my.mcraft out --set wear=0.7    # with a graph input "wear" set first
 cd apps/materialcraft-web && trunk serve                      # web build
 cargo xtask ci                                                # fmt, clippy, tests, layering, wasm
 ```
@@ -156,17 +157,17 @@ The details are in [`docs/control-protocol.md`](docs/control-protocol.md).
 MaterialCraft is under active development. [**ROADMAP.md**](ROADMAP.md) has the parity estimate by
 area, the remaining work and what's next.
 
-**Where we are (2026-11-02):** the node engine, about 120 nodes (the atomic nodes, noises,
-patterns, adjustments, blurs, effects, normal map tools, tiling, transforms and PBR utilities),
-pixel and value processors driven by function graphs, sub-graphs with exposed parameters, the full
-editor (graph, library, properties, 2D and 3D views), `.mcraft` packages, texture export, the CLI,
-the control channel and the MCP server all work today. We estimate about half (≈ 51%) of a material
-artist's daily workflow works end to end; [docs/target-app-parity.md](docs/target-app-parity.md)
-has the breakdown.
+**Where we are (2026-11-02):** the node engine and 227 nodes (the atomic nodes including FX-Map,
+SVG and Text, noises including tileable 3D ones, patterns, filters, the flood fill family,
+whole-material blending and weathering), function graphs with a visual editor and dynamic
+parameters, sub-graphs with exposed inputs and presets, the full editor (graph, library,
+properties, 2D view with histogram, 3D view with your own OBJ/glTF meshes), `.mcraft` packages,
+texture export, the browser build with file I/O, the CLI, the control channel and the MCP server
+all work today. We estimate about two thirds (≈ 66%) of a material artist's daily workflow works
+end to end; [docs/target-app-parity.md](docs/target-app-parity.md) has the breakdown.
 
-**What's missing:** a visual function-graph editor (functions are edited as JSON for now), the
-rest of the node library, FX-maps, text and vector shapes, a GPU cook path, mesh-based nodes,
-browser file I/O, translations and the first signed release. The ranked list is in
+**What's missing:** the rest of the node library, a GPU 3D view with tessellation and lights,
+mesh-based nodes, published material archives, translations and the first signed release. The ranked list is in
 [`docs/gaps.md`](docs/gaps.md).
 
 **Workspace:** `crates/{core, image, geom, nodes, eval, formats, engine, render, automation, ui-egui}`
