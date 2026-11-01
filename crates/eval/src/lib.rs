@@ -226,6 +226,23 @@ pub fn node_size(graph: &Graph, def: Option<&NodeDef>, node: &Node, input: Optio
     }
 }
 
+/// A function result (4 lanes) as a value of `like`'s type.
+pub fn function_value(like: &Value, v: [f32; 4]) -> Option<Value> {
+    let f = |x: f32| if x.is_finite() { x } else { 0.0 };
+    Some(match like {
+        Value::Float(_) => Value::Float(f(v[0])),
+        Value::Float2(_) => Value::Float2([f(v[0]), f(v[1])]),
+        Value::Float3(_) => Value::Float3([f(v[0]), f(v[1]), f(v[2])]),
+        Value::Float4(_) => Value::Float4(v.map(f)),
+        Value::Color(_) => Value::Color(v.map(f)),
+        Value::Int(_) => Value::Int(f(v[0]).round().clamp(i32::MIN as f32, i32::MAX as f32) as i32),
+        Value::Int2(_) => Value::Int2([f(v[0]).round() as i32, f(v[1]).round() as i32]),
+        Value::Bool(_) => Value::Bool(f(v[0]) != 0.0),
+        Value::Enum(_) => Value::Enum(f(v[0]).round().max(0.0) as u32),
+        _ => return None,
+    })
+}
+
 /// Cook graph `gi` of `pkg`.
 pub fn cook(pkg: &Package, gi: usize, opts: &Options, cache: &mut Cache) -> Cooked {
     let t0 = now_ms();
@@ -298,6 +315,19 @@ fn cook_node(pkg: &Package, graph: &Graph, node: &Node, done: &Cooked, vars: &BT
         }
     }
     let seed = (graph.seed as u32).wrapping_mul(0x9e37_79b9).wrapping_add(node.base.seed as u32);
+    // Dynamic parameters: functions of the graph's inputs, evaluated once per cook.
+    for (param, f) in &node.functions {
+        let Some(cur) = params.get(param) else { continue };
+        match materialcraft_nodes::function::compile(f, vars, seed) {
+            Ok(prog) => {
+                let v = prog.eval([0.5, 0.5], [w as f32, h as f32], &[], true, &mut Vec::new());
+                if let Some(c) = function_value(cur, v) {
+                    params.insert(param.clone(), c);
+                }
+            }
+            Err(e) => return fail(format!("function of `{param}`: {e}"), 0),
+        }
+    }
     let tile = node.base.tiling[0] && node.base.tiling[1];
     // Input nodes read the caller's image for their identifier.
     let input_img = node.def.starts_with("input_").then(|| opts.inputs.get(&identifier(node))).flatten();

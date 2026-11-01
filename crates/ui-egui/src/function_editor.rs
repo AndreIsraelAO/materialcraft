@@ -92,9 +92,13 @@ fn out_port(r: Rect) -> Pos2 {
     pos2(r.right(), r.top() + HEADER + ROW * 0.5)
 }
 
-/// The function currently stored on the node.
+/// The function currently stored on the node: a function parameter, or (`fn:<param>`) the
+/// function driving a dynamic parameter.
 fn current(app: &MaterialCraftApp, e: &FnEditor) -> Option<FnGraph> {
     let n = app.session.graph().ok()?.node(e.node).ok()?;
+    if let Some(p) = e.param.strip_prefix("fn:") {
+        return n.functions.get(p).cloned();
+    }
     match n.params.get(&e.param) {
         Some(Value::Function(f)) => Some((**f).clone()),
         _ => materialcraft_engine::nodes::find(&n.def)?.param(&e.param).and_then(|p| match &p.default {
@@ -105,6 +109,10 @@ fn current(app: &MaterialCraftApp, e: &FnEditor) -> Option<FnGraph> {
 }
 
 fn commit(app: &mut MaterialCraftApp, node: NodeId, param: &str, g: &FnGraph) {
+    if let Some(p) = param.strip_prefix("fn:") {
+        app.run("graph.node.function", json!({"id": node.0, "param": p, "function": g}));
+        return;
+    }
     let v = serde_json::to_value(Value::Function(Box::new(g.clone()))).unwrap_or(serde_json::Value::Null);
     app.run("graph.node.param", json!({"id": node.0, "param": param, "value": v}));
 }
@@ -116,7 +124,8 @@ pub fn show(app: &mut MaterialCraftApp, ctx: &egui::Context) {
     let title = app.session.graph().ok().and_then(|gr| gr.node(e.node).ok()).map(crate::graph_view::node_label).unwrap_or_default();
     let mut open = true;
     let mut changed = false;
-    egui::Window::new(format!("{} - {}", title, tr("Function graph")))
+    let what = e.param.strip_prefix("fn:").map_or_else(|| tr("Function graph").to_string(), |p| format!("{} {p}", tr("Function of")));
+    egui::Window::new(format!("{title} - {what}"))
         .id(egui::Id::unique(("fn-editor", e.node.0, e.param.as_str())))
         .open(&mut open)
         .default_size(vec2(760.0, 460.0))

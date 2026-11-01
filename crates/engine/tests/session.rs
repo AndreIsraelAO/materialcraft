@@ -112,3 +112,39 @@ fn panic_hunt() {
         }
     }
 }
+
+#[test]
+fn dynamic_parameters_follow_graph_inputs() {
+    let mut s = sample_session();
+    run(&mut s, "file.new", json!({"template": "empty"}));
+    let u = run(&mut s, "graph.node.add", json!({"def": "uniform", "params": {"mode": 1}}))["id"].as_u64().unwrap();
+    run(&mut s, "graph.exposed.add", json!({"id": "level", "default": {"t": "float", "v": 0.25}}));
+    // color = get_var(level) broadcast to four lanes.
+    let f = json!({"nodes": [{"id": 1, "op": "get_var", "value": {"t": "text", "v": "level"}}], "output": 1});
+    run(&mut s, "graph.node.function", json!({"id": u, "param": "color", "function": f}));
+    s.cook();
+    let mean = |s: &Session| s.cooked.image(materialcraft_engine::core::NodeId(u), 0).unwrap().mean()[0];
+    assert!((mean(&s) - 0.25).abs() < 1e-4, "{}", mean(&s));
+    run(&mut s, "graph.exposed.set", json!({"id": "level", "value": 0.75}));
+    s.cook();
+    assert!((mean(&s) - 0.75).abs() < 1e-4);
+    // Text parameters can't take functions; removing restores the plain value.
+    assert!(execute(&mut s, "graph.node.function", &json!({"id": u, "param": "nope"})).is_err());
+    run(&mut s, "graph.node.function", json!({"id": u, "param": "color", "remove": true}));
+    s.cook();
+    assert!((mean(&s) - 0.5).abs() < 0.05);
+}
+
+#[test]
+fn presets_store_and_restore_inputs() {
+    let mut s = sample_session();
+    run(&mut s, "file.new", json!({"template": "empty"}));
+    run(&mut s, "graph.exposed.add", json!({"id": "a", "default": {"t": "float", "v": 0.1}}));
+    run(&mut s, "graph.preset.save", json!({"name": "Low"}));
+    run(&mut s, "graph.exposed.set", json!({"id": "a", "value": 0.9}));
+    run(&mut s, "graph.preset.apply", json!({"name": "Low"}));
+    assert_eq!(s.graph().unwrap().input_value("a"), Some(&materialcraft_engine::core::Value::Float(0.1)));
+    assert!(execute(&mut s, "graph.preset.apply", &json!({"name": "Nope"})).is_err());
+    run(&mut s, "graph.preset.delete", json!({"name": "Low"}));
+    assert!(s.graph().unwrap().presets.is_empty());
+}

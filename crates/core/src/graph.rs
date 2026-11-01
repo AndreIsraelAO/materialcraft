@@ -97,6 +97,10 @@ pub struct Node {
     /// Parameters driven by a graph input (param id → exposed input id).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub bindings: BTreeMap<String, String>,
+    /// Dynamic parameters: param id → a function graph computing its value from the graph's
+    /// inputs at cook time.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub functions: BTreeMap<String, crate::function::FnGraph>,
     #[serde(default)]
     pub base: BaseParams,
     /// A disabled node passes its first input through.
@@ -113,6 +117,7 @@ impl Node {
             pos,
             params: BTreeMap::new(),
             bindings: BTreeMap::new(),
+            functions: BTreeMap::new(),
             base: BaseParams::default(),
             disabled: false,
         }
@@ -187,6 +192,13 @@ fn one() -> f32 {
     1.0
 }
 
+/// A named set of input values (graph presets).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Preset {
+    pub name: String,
+    pub values: BTreeMap<String, Value>,
+}
+
 /// Descriptive metadata ("Attributes").
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -231,6 +243,9 @@ pub struct Graph {
     /// Current values of the exposed inputs (missing = default).
     #[serde(default)]
     pub inputs: BTreeMap<String, Value>,
+    /// Named sets of input values.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub presets: Vec<Preset>,
     #[serde(default)]
     pub attributes: Attributes,
     /// The id the next node, frame, comment or pin gets.
@@ -256,6 +271,7 @@ impl Graph {
             seed: 0,
             exposed: Vec::new(),
             inputs: BTreeMap::new(),
+            presets: Vec::new(),
             attributes: Attributes::default(),
             next_id: 1,
         }

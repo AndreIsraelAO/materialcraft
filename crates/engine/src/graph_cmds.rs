@@ -52,6 +52,17 @@ pub(crate) fn specs() -> Vec<CommandSpec> {
         ),
         cmd!("graph.exposed.set", "Set input value", [], None, "{id, value}", has_graph, exposed_set),
         cmd!("graph.exposed.delete", "Delete input", [], None, "{id}", has_graph, exposed_delete),
+        cmd!(
+            "graph.preset.save",
+            "Save preset",
+            [],
+            None,
+            "{name} stores the current input values as a preset (replacing one of that name)",
+            has_graph,
+            preset_save
+        ),
+        cmd!("graph.preset.apply", "Apply preset", [], None, "{name}", has_graph, preset_apply),
+        cmd!("graph.preset.delete", "Delete preset", [], None, "{name}", has_graph, preset_delete),
         cmd!("graph.select", "Select nodes", [], None, "{ids, add?: bool}", has_graph, select),
         cmd!("graph.selectUpstream", "Select upstream nodes", [], None, "{ids?}", has_selection, |s, p| select_stream(s, p, true)),
         cmd!("graph.selectDownstream", "Select downstream nodes", [], None, "{ids?}", has_selection, |s, p| select_stream(s, p, false)),
@@ -370,6 +381,44 @@ fn exposed_delete(s: &mut Session, p: &J) -> Result<J> {
         for n in &mut g.nodes {
             n.bindings.retain(|_, v| *v != id);
         }
+        Ok(J::Null)
+    })
+}
+
+fn preset_name(p: &J, cmd: &str) -> Result<String> {
+    strp(p, "name").map(str::trim).filter(|n| !n.is_empty()).map(str::to_string).ok_or_else(|| bad(cmd, "`name` is required"))
+}
+
+fn preset_save(s: &mut Session, p: &J) -> Result<J> {
+    let name = preset_name(p, "graph.preset.save")?;
+    s.edit("Save preset", |s| {
+        let g = s.graph_mut()?;
+        let values = g.exposed.iter().filter_map(|e| g.input_value(&e.id).map(|v| (e.id.clone(), v.clone()))).collect();
+        g.presets.retain(|x| x.name != name);
+        g.presets.push(materialcraft_core::Preset { name: name.clone(), values });
+        Ok(json!({"presets": g.presets.len()}))
+    })
+}
+
+fn preset_apply(s: &mut Session, p: &J) -> Result<J> {
+    let name = preset_name(p, "graph.preset.apply")?;
+    s.edit("Apply preset", |s| {
+        let g = s.graph_mut()?;
+        let preset = g.presets.iter().find(|x| x.name == name).cloned().ok_or_else(|| bad("graph.preset.apply", format!("no preset `{name}`")))?;
+        for (k, v) in preset.values {
+            // Only inputs that still exist, with their current type.
+            if g.exposed.iter().any(|e| e.id == k && e.default.type_name() == v.type_name()) {
+                g.inputs.insert(k, v);
+            }
+        }
+        Ok(J::Null)
+    })
+}
+
+fn preset_delete(s: &mut Session, p: &J) -> Result<J> {
+    let name = preset_name(p, "graph.preset.delete")?;
+    s.edit("Delete preset", |s| {
+        s.graph_mut()?.presets.retain(|x| x.name != name);
         Ok(J::Null)
     })
 }

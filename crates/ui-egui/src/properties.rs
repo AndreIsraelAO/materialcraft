@@ -89,6 +89,10 @@ fn node_props(app: &mut MaterialCraftApp, ui: &mut Ui, n: &materialcraft_engine:
             app.session.graph().map(|g| g.exposed.iter().map(|e| (e.id.clone(), e.label.clone())).collect()).unwrap_or_default();
         for p in &def.params {
             let cur = n.params.get(p.id).cloned().unwrap_or_else(|| p.default.clone());
+            if n.functions.contains_key(p.id) {
+                function_row(app, ui, n.id, p.id, p.label);
+                continue;
+            }
             let bound = n.bindings.get(p.id).cloned();
             param_row(app, ui, n.id, p, cur, bound, &exposed);
         }
@@ -180,6 +184,13 @@ fn param_row(app: &mut MaterialCraftApp, ui: &mut Ui, node: NodeId, p: &ParamDef
         resp.context_menu(|ui| {
             if ui.button(tr("Reset to default")).clicked() {
                 app.run("graph.node.reset", json!({"id": node.0, "param": p.id}));
+                ui.close();
+            }
+            let dynamic = !matches!(p.default, Value::Text(_) | Value::Curve(_) | Value::Gradient(_) | Value::Function(_));
+            if dynamic && ui.button(tr("Set function...")).clicked() {
+                if app.run("graph.node.function", json!({"id": node.0, "param": p.id})).is_some() {
+                    app.fn_editor = Some(crate::function_editor::FnEditor::new(node, &format!("fn:{}", p.id)));
+                }
                 ui.close();
             }
             if ui.button(tr("Expose as graph input")).clicked() {
@@ -324,6 +335,21 @@ fn param_row(app: &mut MaterialCraftApp, ui: &mut Ui, node: NodeId, p: &ParamDef
     }
 }
 
+/// A parameter driven by a function: its label, Edit and Remove.
+fn function_row(app: &mut MaterialCraftApp, ui: &mut Ui, node: NodeId, param: &str, label: &str) {
+    let tk = Tokens::get(ui.ctx());
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(tr(label)).color(tk.text));
+        ui.label(RichText::new(format!("{} {}", icon::FUNCTION, tr("function"))).color(tk.accent));
+        if ui.small_button(tr("Edit")).clicked() {
+            app.fn_editor = Some(crate::function_editor::FnEditor::new(node, &format!("fn:{param}")));
+        }
+        if crate::widgets::icon_button(ui, icon::X, tr("Remove function"), false, 18.0).clicked() {
+            app.run("graph.node.function", json!({"id": node.0, "param": param, "remove": true}));
+        }
+    });
+}
+
 fn instance_params(app: &mut MaterialCraftApp, ui: &mut Ui, n: &materialcraft_engine::core::Node) {
     let tk = Tokens::get(ui.ctx());
     let Some((gi, sub)) = materialcraft_engine::eval::instance_graph(&app.session.pkg, n) else {
@@ -340,13 +366,50 @@ fn instance_params(app: &mut MaterialCraftApp, ui: &mut Ui, n: &materialcraft_en
     }
     for e in exposed {
         let cur = n.params.get(&e.id).cloned().unwrap_or_else(|| e.default.clone());
-        if let Some(v) = cur.as_f32() {
-            let (mut f, v0) = (v, v);
-            if crate::widgets::slider(ui, &e.label, &mut f, e.min.min(v0)..=e.max.max(v0), 3).changed() {
-                app.run("graph.node.param", json!({"id": n.id.0, "param": e.id, "value": f}));
-            }
-        } else {
-            ui.label(format!("{}: {}", e.label, cur.type_name()));
+        if let Some(v) = input_editor(ui, &e, &cur) {
+            app.run("graph.node.param", json!({"id": n.id.0, "param": e.id, "value": v}));
+        }
+    }
+}
+
+/// The editor for one exposed input's value; returns the new value as JSON when it changed.
+fn input_editor(ui: &mut Ui, e: &materialcraft_engine::core::ExposedParam, cur: &Value) -> Option<J> {
+    match *cur {
+        Value::Float(mut f) => {
+            let v0 = f;
+            crate::widgets::slider(ui, &e.label, &mut f, e.min.min(v0)..=e.max.max(v0), 3).changed().then(|| json!(f))
+        }
+        Value::Int(i) => {
+            let mut f = i as f32;
+            let v0 = f;
+            crate::widgets::slider(ui, &e.label, &mut f, e.min.min(v0)..=e.max.max(v0), 0).changed().then(|| json!(f.round()))
+        }
+        Value::Bool(mut b) => ui.checkbox(&mut b, &e.label).changed().then(|| json!(b)),
+        Value::Enum(i) => {
+            let mut out = None;
+            crate::widgets::combo(ui, &e.label, e.options.get(i as usize).cloned().unwrap_or_default(), |ui| {
+                for (k, o) in e.options.iter().enumerate() {
+                    if ui.selectable_label(k as u32 == i, o).clicked() {
+                        out = Some(json!(k));
+                    }
+                }
+            });
+            out
+        }
+        Value::Color(c) => {
+            let mut rgb = [c[0], c[1], c[2]];
+            let mut out = None;
+            ui.horizontal(|ui| {
+                ui.label(&e.label);
+                if crate::widgets::color_swatch(ui, &format!("exp-{}", e.id), &mut rgb, 80.0) {
+                    out = Some(json!([rgb[0], rgb[1], rgb[2], c[3]]));
+                }
+            });
+            out
+        }
+        ref other => {
+            ui.label(format!("{}: {}", e.label, other.type_name()));
+            None
         }
     }
 }
@@ -409,52 +472,33 @@ fn graph_props(app: &mut MaterialCraftApp, ui: &mut Ui) {
     section(ui, "graph-inputs", tr("Input parameters"), |ui| {
         if g.exposed.is_empty() {
             ui.label(RichText::new(tr("Right-click a node parameter > Expose as graph input")).size(11.0).color(tk.text_dim));
+        } else {
+            presets_bar(app, ui, &g);
         }
+        let mut groups: Vec<&str> = Vec::new();
         for e in &g.exposed {
+            if !groups.contains(&e.group.as_str()) {
+                groups.push(&e.group);
+            }
+        }
+        let mut last_group: Option<&str> = None;
+        let mut order: Vec<&materialcraft_engine::core::ExposedParam> = Vec::new();
+        for grp in &groups {
+            order.extend(g.exposed.iter().filter(|e| e.group == *grp));
+        }
+        for e in order {
+            if last_group != Some(e.group.as_str()) && !e.group.is_empty() {
+                ui.label(RichText::new(e.group.to_uppercase()).size(10.5).strong().color(tk.text_dim));
+            }
+            last_group = Some(e.group.as_str());
             let cur = g.input_value(&e.id).cloned().unwrap_or_else(|| e.default.clone());
             ui.horizontal(|ui| {
                 if crate::widgets::icon_button(ui, icon::X, tr("Delete input"), false, 18.0).clicked() {
                     app.run("graph.exposed.delete", json!({"id": e.id}));
                 }
-                ui.vertical(|ui| match cur {
-                    Value::Float(mut f) => {
-                        let v0 = f;
-                        if crate::widgets::slider(ui, &e.label, &mut f, e.min.min(v0)..=e.max.max(v0), 3).changed() {
-                            app.run("graph.exposed.set", json!({"id": e.id, "value": f}));
-                        }
-                    }
-                    Value::Int(i) => {
-                        let mut f = i as f32;
-                        let v0 = f;
-                        if crate::widgets::slider(ui, &e.label, &mut f, e.min.min(v0)..=e.max.max(v0), 0).changed() {
-                            app.run("graph.exposed.set", json!({"id": e.id, "value": f.round()}));
-                        }
-                    }
-                    Value::Bool(mut b) => {
-                        if ui.checkbox(&mut b, &e.label).changed() {
-                            app.run("graph.exposed.set", json!({"id": e.id, "value": b}));
-                        }
-                    }
-                    Value::Enum(i) => {
-                        crate::widgets::combo(ui, &e.label, e.options.get(i as usize).cloned().unwrap_or_default(), |ui| {
-                            for (k, o) in e.options.iter().enumerate() {
-                                if ui.selectable_label(k as u32 == i, o).clicked() {
-                                    app.run("graph.exposed.set", json!({"id": e.id, "value": k}));
-                                }
-                            }
-                        });
-                    }
-                    Value::Color(c) => {
-                        let mut rgb = [c[0], c[1], c[2]];
-                        ui.horizontal(|ui| {
-                            ui.label(&e.label);
-                            if crate::widgets::color_swatch(ui, &format!("exp-{}", e.id), &mut rgb, 80.0) {
-                                app.run("graph.exposed.set", json!({"id": e.id, "value": [rgb[0], rgb[1], rgb[2], c[3]]}));
-                            }
-                        });
-                    }
-                    other => {
-                        ui.label(format!("{}: {}", e.label, other.type_name()));
+                ui.vertical(|ui| {
+                    if let Some(v) = input_editor(ui, e, &cur) {
+                        app.run("graph.exposed.set", json!({"id": e.id, "value": v}));
                     }
                 });
             });
@@ -474,6 +518,35 @@ fn graph_props(app: &mut MaterialCraftApp, ui: &mut Ui) {
             }
         }
     });
+}
+
+/// Presets: apply one, save the current inputs under a name, delete one.
+fn presets_bar(app: &mut MaterialCraftApp, ui: &mut Ui, g: &materialcraft_engine::core::Graph) {
+    let name_id = ui.make_persistent_id("preset-name");
+    let mut name: String = ui.data(|d| d.get_temp(name_id)).unwrap_or_default();
+    ui.horizontal(|ui| {
+        let names: Vec<String> = g.presets.iter().map(|p| p.name.clone()).collect();
+        let r = egui::ComboBox::from_id_salt("presets").width(110.0).selected_text(tr("Presets")).show_ui(ui, |ui| {
+            for n in &names {
+                if ui.button(n).clicked() {
+                    app.run("graph.preset.apply", json!({"name": n}));
+                }
+            }
+            if names.is_empty() {
+                ui.label(tr("No presets yet"));
+            }
+        });
+        crate::widgets::name(&r.response, egui::Role::ComboBox, "Presets");
+        let t = ui.add(egui::TextEdit::singleline(&mut name).hint_text(tr("Preset name")).desired_width(90.0));
+        crate::widgets::name(&t, egui::Role::TextInput, "Preset name");
+        if crate::widgets::icon_button(ui, icon::FLOPPY_DISK, tr("Save preset"), false, 20.0).clicked() && !name.trim().is_empty() {
+            app.run("graph.preset.save", json!({"name": name}));
+        }
+        if crate::widgets::icon_button(ui, icon::X, tr("Delete preset"), false, 20.0).clicked() && !name.trim().is_empty() {
+            app.run("graph.preset.delete", json!({"name": name}));
+        }
+    });
+    ui.data_mut(|d| d.insert_temp(name_id, name));
 }
 
 /// A tone curve editor: drag points, double-click to add one, right-click a point to remove it.

@@ -41,6 +41,15 @@ pub(crate) fn specs() -> Vec<CommandSpec> {
             base
         ),
         cmd!("graph.node.bind", "Bind parameter to input", [], None, "{id?, param, input (exposed id); input null unbinds}", has_selection, bind),
+        cmd!(
+            "graph.node.function",
+            "Set parameter function",
+            [],
+            None,
+            "{id?, param, function?: {nodes, output} (default: a constant of the current value), remove?: bool} drives a parameter with a function graph of the graph's inputs",
+            has_selection,
+            set_function
+        ),
         cmd!("graph.connect", "Connect", [], None, "{from, fromPort? (output), to, toPort? (first input)}", has_graph, connect),
         cmd!("graph.disconnect", "Disconnect", [], None, "{to, toPort}", has_graph, disconnect),
     ]
@@ -235,6 +244,39 @@ fn bind(s: &mut Session, p: &J) -> Result<J> {
             Some(i) => n.bindings.insert(param, i),
             None => n.bindings.remove(&param),
         };
+        Ok(J::Null)
+    })
+}
+
+fn set_function(s: &mut Session, p: &J) -> Result<J> {
+    let id = node_param(s, "graph.node.function", p, "id")?;
+    let param = strp(p, "param").ok_or_else(|| bad("graph.node.function", "`param` is required"))?.to_string();
+    let node = s.graph()?.node(id)?.clone();
+    let def = materialcraft_nodes::find(&node.def).ok_or_else(|| bad("graph.node.function", "unknown node type"))?;
+    let pd = def.param(&param).ok_or_else(|| bad("graph.node.function", format!("`{}` has no parameter `{param}`", node.def)))?;
+    if matches!(pd.default, Value::Text(_) | Value::Curve(_) | Value::Gradient(_) | Value::Function(_)) {
+        return Err(bad("graph.node.function", format!("`{param}` is a {} and can't take a function", pd.default.type_name())));
+    }
+    if boolp(p, "remove") == Some(true) {
+        return s.edit("Remove parameter function", |s| {
+            s.graph_mut()?.node_mut(id)?.functions.remove(&param);
+            Ok(J::Null)
+        });
+    }
+    let f = match p.get("function") {
+        Some(f) if !f.is_null() => {
+            serde_json::from_value::<materialcraft_core::function::FnGraph>(f.clone()).map_err(|e| bad("graph.node.function", format!("bad function: {e}")))?
+        }
+        _ => match node.functions.get(&param) {
+            Some(f) => f.clone(),
+            None => materialcraft_core::function::FnGraph::constant(node.params.get(&param).cloned().unwrap_or_else(|| pd.default.clone())),
+        },
+    };
+    if f.nodes.len() > 4096 {
+        return Err(bad("graph.node.function", "the function is too large"));
+    }
+    s.edit_merged(&format!("fn:{}:{param}", id.0), "Set parameter function", |s| {
+        s.graph_mut()?.node_mut(id)?.functions.insert(param.clone(), f);
         Ok(J::Null)
     })
 }

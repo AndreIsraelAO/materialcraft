@@ -17,6 +17,7 @@ pub fn session(s: &Session, graph: Option<usize>) -> J {
             "seed": g.seed,
             "attributes": g.attributes,
             "exposed": g.exposed,
+            "presets": g.presets,
             "inputs": g.inputs,
             "nodes": g.nodes.iter().map(|n| {
                 let r = cooked.and_then(|c| c.nodes.get(&n.id));
@@ -28,6 +29,7 @@ pub fn session(s: &Session, graph: Option<usize>) -> J {
                     "pos": n.pos,
                     "params": n.params,
                     "bindings": n.bindings,
+                    "functions": n.functions,
                     "base": n.base,
                     "disabled": n.disabled,
                     "inputs": ins.iter().map(|p| &p.id).collect::<Vec<_>>(),
