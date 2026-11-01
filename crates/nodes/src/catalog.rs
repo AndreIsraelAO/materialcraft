@@ -318,9 +318,14 @@ pub fn catalog() -> &'static [NodeDef] {
         let mut v = Vec::new();
         v.extend(crate::atomic::defs());
         v.extend(crate::generators::defs());
+        v.extend(crate::noises_more::defs());
         v.extend(crate::patterns::defs());
+        v.extend(crate::patterns_more::defs());
         v.extend(crate::filters::defs());
+        v.extend(crate::filters_more::defs());
+        v.extend(crate::flood_fill::defs());
         v.extend(crate::material::defs());
+        v.extend(crate::material_more::defs());
         v
     })
 }
