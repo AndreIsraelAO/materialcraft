@@ -66,7 +66,8 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
         });
     });
     let Some((id, img)) = app.session.view2d_image().map(|(id, i)| (id, i.clone())) else {
-        let (r, _) = ui.allocate_exact_size(ui.available_size(), Sense::hover());
+        let (r, resp) = ui.allocate_exact_size(ui.available_size(), Sense::hover());
+        crate::widgets::name(&resp, egui::Role::Image, "2D view");
         ui.painter().rect_filled(r, 0.0, tk.viewport);
         ui.painter().text(
             r.center(),
@@ -89,6 +90,7 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
     }
     let avail = ui.available_size();
     let (rect, resp) = ui.allocate_exact_size(vec2(avail.x, (avail.y - 20.0).max(40.0)), Sense::click_and_drag());
+    crate::widgets::name(&resp, egui::Role::Image, "2D view");
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, tk.viewport);
     // Camera: fit, wheel zoom around the pointer, drag to pan.

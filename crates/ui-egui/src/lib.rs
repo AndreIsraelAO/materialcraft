@@ -11,6 +11,7 @@ pub mod control;
 pub mod cook;
 pub mod docking;
 pub mod explorer;
+pub mod function_editor;
 pub mod graph_view;
 pub mod i18n;
 pub mod library;
@@ -22,6 +23,7 @@ pub mod thumbs;
 pub mod toolbar;
 pub mod view2d;
 pub mod view3d;
+pub mod web_files;
 pub mod widgets;
 pub mod windows;
 
@@ -52,6 +54,8 @@ pub struct MaterialCraftApp {
     pub graph: graph_view::GraphView,
     pub view3d: view3d::View3dState,
     pub view2d: view2d::View2dState,
+    /// The function graph editor window, when open.
+    pub fn_editor: Option<function_editor::FnEditor>,
     /// Synthetic input from the control channel, fed to egui on the next frames.
     pub input_queue: VecDeque<control::Scripted>,
     pub fps: f32,
@@ -73,6 +77,7 @@ impl MaterialCraftApp {
         theme::install(&cc.egui_ctx);
         let mut app = MaterialCraftApp::headless(session, ui);
         app.fonts_ready = true;
+        app.ui.windows.home = app.ui.prefs.show_home;
         app
     }
 
@@ -92,6 +97,7 @@ impl MaterialCraftApp {
             graph: graph_view::GraphView::default(),
             view3d: view3d::View3dState::default(),
             view2d: view2d::View2dState::default(),
+            fn_editor: None,
             input_queue: VecDeque::new(),
             fps: 0.0,
             ui_ms: 0.0,
@@ -209,7 +215,10 @@ impl MaterialCraftApp {
             ctx.set_zoom_factor(scale);
         }
         control::poll(self, ctx);
-        windows::poll_files(self);
+        web_files::poll(self);
+        for f in ctx.input(|i| i.raw.dropped_files.clone()) {
+            web_files::dropped(self, ctx, &f);
+        }
         self.apply_prefs();
         cook::drive(self, ctx);
         #[cfg(not(target_arch = "wasm32"))]
@@ -234,6 +243,7 @@ impl MaterialCraftApp {
         toolbar::status_bar(self, ui);
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(theme::Tokens::get(&ctx).chrome)).show(ui, |ui| docking::show(self, ui));
         windows::show(self, &ctx);
+        function_editor::show(self, &ctx);
         toasts(self, &ctx);
         let dt = (now_ms() - t0) as f32;
         self.ui_ms = if self.ui_ms == 0.0 { dt } else { self.ui_ms * 0.9 + dt * 0.1 };

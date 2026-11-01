@@ -140,7 +140,7 @@ pub fn invoke(app: &mut MaterialCraftApp, ctx: &egui::Context, id: &str) {
         "ui.help.docs" => ctx.open_url(egui::OpenUrl::new_tab("https://github.com/storytold/materialcraft#readme")),
         "ui.help.bug" => ctx.open_url(egui::OpenUrl::new_tab("https://github.com/storytold/materialcraft/issues")),
         _ => {
-            if crate::windows::file_action(app, id) {
+            if crate::windows::file_action(app, ctx, id) {
                 return;
             }
             app.run(id, Value::Null);

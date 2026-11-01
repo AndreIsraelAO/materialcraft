@@ -259,11 +259,12 @@ fn parent_size(app: &mut MaterialCraftApp, ui: &mut Ui) {
     let mut nw = w;
     let mut nh = h;
     let combo = |ui: &mut Ui, id: &str, v: &mut u32| {
-        egui::ComboBox::from_id_salt(id).width(64.0).selected_text(format!("{}", 1u32 << *v)).show_ui(ui, |ui| {
+        let r = egui::ComboBox::from_id_salt(id).width(64.0).selected_text(format!("{}", 1u32 << *v)).show_ui(ui, |ui| {
             for l in 4..=13u32 {
                 ui.selectable_value(v, l, format!("{}", 1u32 << l));
             }
         });
+        crate::widgets::name(&r.response, egui::Role::ComboBox, if id == "parent-w" { "Parent width" } else { "Parent height" });
     };
     combo(ui, "parent-h", &mut nh);
     ui.label("x");
@@ -325,6 +326,7 @@ fn canvas(app: &mut MaterialCraftApp, ui: &mut Ui) {
     let tk = Tokens::get(ui.ctx());
     let ctx = ui.ctx().clone();
     let (rect, resp) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
+    crate::widgets::name(&resp, egui::Role::Canvas, "Node graph");
     app.graph.view = rect;
     if app.ui.frame_all || app.graph.framed_graph != Some(app.session.graph) {
         app.ui.frame_all = false;
@@ -484,6 +486,7 @@ fn canvas(app: &mut MaterialCraftApp, ui: &mut Ui) {
         let result = cooked.nodes.get(&n.id);
         let error = result.and_then(|r| r.error.clone());
         let resp = ui.interact(sr, ui.scope_id().with(("node", n.id.0)), Sense::click_and_drag());
+        crate::widgets::name(&resp, egui::Role::Button, &node_label(n));
         if n.def == "dot" {
             painter.circle(
                 sr.center(),
@@ -809,6 +812,10 @@ fn handle_input(
                 Some((d, Some(Value::Text(name)))) if d == "graph_instance" => {
                     app.run("graph.open", json!({"graph": name}));
                 }
+                Some((d, _)) if d == "pixel_processor" || d == "value_processor" => {
+                    app.run("view.2d", json!({"node": id.0, "port": 0}));
+                    app.fn_editor = Some(crate::function_editor::FnEditor::new(*id, "function"));
+                }
                 _ => {
                     app.run("view.2d", json!({"node": id.0, "port": 0}));
                 }
@@ -904,6 +911,7 @@ fn search_popup(app: &mut MaterialCraftApp, ui: &mut Ui, cam: &Cam) {
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(icon::MAGNIFYING_GLASS).color(tk.text_dim));
                 let r = ui.add(egui::TextEdit::singleline(&mut s.text).hint_text(tr("Search nodes...")).desired_width(220.0));
+                crate::widgets::name(&r, egui::Role::SearchInput, "Search nodes");
                 if s.focus {
                     r.request_focus();
                     s.focus = false;

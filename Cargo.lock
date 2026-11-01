@@ -2386,12 +2386,17 @@ dependencies = [
  "egui-phosphor",
  "egui_kittest",
  "image",
+ "js-sys",
  "log",
  "materialcraft-engine",
  "materialcraft-render",
  "rfd",
  "serde",
  "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "zip",
 ]
 
 [[package]]

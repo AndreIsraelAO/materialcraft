@@ -37,6 +37,7 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
         for (i, g) in app.session.pkg.graphs.iter().enumerate() {
             let on = i == app.session.graph;
             let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click());
+            crate::widgets::name(&resp, egui::Role::TreeItem, &g.name);
             if on {
                 ui.painter().rect_filled(r, 4.0, tk.row_selected);
                 ui.painter().rect_stroke(r, 4.0, egui::Stroke::new(1.0, tk.accent), egui::StrokeKind::Inside);

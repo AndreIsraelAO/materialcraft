@@ -42,7 +42,8 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
     let tk = Tokens::get(ui.ctx());
     ui.horizontal(|ui| {
         ui.label(RichText::new(icon::MAGNIFYING_GLASS).color(tk.text_dim));
-        ui.add(egui::TextEdit::singleline(&mut app.ui.library_search).hint_text(tr("Search")).desired_width((ui.available_width() - 56.0).max(40.0)));
+        let r = ui.add(egui::TextEdit::singleline(&mut app.ui.library_search).hint_text(tr("Search")).desired_width((ui.available_width() - 56.0).max(40.0)));
+        crate::widgets::name(&r, egui::Role::SearchInput, "Search the library");
         if crate::widgets::icon_button(ui, icon::SQUARES_FOUR, tr("Icons"), !app.ui.prefs.library_list, 20.0).clicked() {
             app.ui.prefs.library_list = false;
         }
@@ -70,6 +71,7 @@ fn category_tree(app: &mut MaterialCraftApp, ui: &mut Ui) {
     let mut row = |ui: &mut Ui, text: String, path: &str, indent: f32| {
         let on = app.ui.library_category == path;
         let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::click());
+        crate::widgets::name(&resp, egui::Role::TreeItem, &text);
         if on {
             ui.painter().rect_filled(r, 4.0, tk.row_selected);
         } else if resp.hovered() {
@@ -142,6 +144,7 @@ fn items(app: &mut MaterialCraftApp, ui: &mut Ui) {
             for (id, label, cat, is_graph) in chunk {
                 let size = if as_list { vec2(ui.available_width(), 26.0) } else { tile };
                 let (r, resp) = ui.allocate_exact_size(size, Sense::click_and_drag());
+                crate::widgets::name(&resp, egui::Role::ListItem, label);
                 let def_id = if *is_graph { "graph_instance" } else { id.as_str() };
                 if resp.hovered() {
                     ui.painter().rect_filled(r, 6.0, tk.row_hover);

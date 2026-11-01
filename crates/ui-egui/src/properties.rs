@@ -24,6 +24,7 @@ fn section(ui: &mut Ui, id: &str, title: &str, body: impl FnOnce(&mut Ui)) {
     let id = ui.make_persistent_id(id);
     let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true);
     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::click());
+    crate::widgets::name(&resp, egui::Role::Button, title);
     ui.painter().rect_filled(r, 3.0, tk.row);
     let chev = if state.is_open() { icon::CARET_DOWN } else { icon::CARET_RIGHT };
     ui.painter().text(r.left_center() + vec2(6.0, 0.0), egui::Align2::LEFT_CENTER, chev, egui::FontId::proportional(10.0), tk.text_dim);
@@ -57,7 +58,9 @@ fn node_props(app: &mut MaterialCraftApp, ui: &mut Ui, n: &materialcraft_engine:
         ui.painter().rect_filled(Rect::from_min_size(ui.cursor().min + vec2(0.0, 2.0), vec2(4.0, 16.0)), 1.0, crate::graph_view::header_color(&n.def));
         ui.add_space(8.0);
         let mut label = if n.label.is_empty() { crate::graph_view::node_label(n) } else { n.label.clone() };
-        if ui.add(egui::TextEdit::singleline(&mut label).desired_width(ui.available_width() - 4.0).font(egui::TextStyle::Heading)).changed() {
+        let r = ui.add(egui::TextEdit::singleline(&mut label).desired_width(ui.available_width() - 4.0).font(egui::TextStyle::Heading));
+        crate::widgets::name(&r, egui::Role::TextInput, "Node label");
+        if r.changed() {
             app.run("graph.node.rename", json!({"id": n.id.0, "label": label}));
         }
     });
@@ -292,7 +295,9 @@ fn param_row(app: &mut MaterialCraftApp, ui: &mut Ui, node: NodeId, p: &ParamDef
             ui.horizontal(|ui| {
                 ui.label(RichText::new(tr(p.label)).color(tk.text));
                 let mut s = t.clone();
-                if ui.add(egui::TextEdit::singleline(&mut s).desired_width(ui.available_width())).changed() {
+                let r = ui.add(egui::TextEdit::singleline(&mut s).desired_width(ui.available_width()));
+                crate::widgets::name(&r, egui::Role::TextInput, p.label);
+                if r.changed() {
                     set(app, node, p.id, json!(s));
                 }
             });
@@ -358,6 +363,7 @@ fn graph_props(app: &mut MaterialCraftApp, ui: &mut Ui) {
             ui.label(tr("Name"));
             let mut name = g.name.clone();
             let r = ui.add(egui::TextEdit::singleline(&mut name).desired_width(ui.available_width()));
+            crate::widgets::name(&r, egui::Role::TextInput, "Graph name");
             if r.lost_focus() && name != g.name {
                 app.run("graph.rename", json!({"name": name}));
             }
@@ -393,6 +399,7 @@ fn graph_props(app: &mut MaterialCraftApp, ui: &mut Ui) {
                 ui.label(tr(label));
                 let mut s = cur.clone();
                 let r = ui.add(egui::TextEdit::singleline(&mut s).desired_width(ui.available_width()));
+                crate::widgets::name(&r, egui::Role::TextInput, label);
                 if r.lost_focus() && s != *cur {
                     app.run("graph.attributes", json!({key: s}));
                 }
@@ -475,6 +482,7 @@ pub fn curve_editor(ui: &mut Ui, id: &str, c: &Curve) -> Option<Curve> {
     let tk = Tokens::get(ui.ctx());
     let w = ui.available_width().min(240.0);
     let (rect, resp) = ui.allocate_exact_size(vec2(w, w * 0.75), Sense::click_and_drag());
+    crate::widgets::name(&resp, egui::Role::Canvas, "Curve editor");
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 4.0, tk.field);
     for i in 1..4 {
@@ -553,6 +561,7 @@ pub fn gradient_editor(ui: &mut Ui, id: &str, g: &Gradient) -> Option<Gradient> 
     let tk = Tokens::get(ui.ctx());
     let w = ui.available_width().min(260.0);
     let (rect, resp) = ui.allocate_exact_size(vec2(w, 30.0), Sense::click_and_drag());
+    crate::widgets::name(&resp, egui::Role::Canvas, "Gradient editor");
     let p = ui.painter_at(rect.expand(6.0));
     let bar = Rect::from_min_size(rect.min, vec2(w, 18.0));
     let n = 64;

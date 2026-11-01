@@ -20,6 +20,8 @@ pub struct Prefs {
     pub thumbnails: bool,
     /// Library tiles: large icons or a list.
     pub library_list: bool,
+    /// Open the home screen when the app starts.
+    pub show_home: bool,
 }
 
 impl Default for Prefs {
@@ -32,6 +34,7 @@ impl Default for Prefs {
             autosave_minutes: 5,
             thumbnails: true,
             library_list: false,
+            show_home: true,
         }
     }
 }

@@ -10,7 +10,7 @@ use materialcraft_ui_egui::{MaterialCraftApp, UiState};
 use serde_json::json;
 
 fn harness(app: MaterialCraftApp, w: f32, h: f32) -> Harness<'static, MaterialCraftApp> {
-    Harness::builder().with_size(vec2(w, h)).with_pixels_per_point(1.0).with_accessibility_check(false).wgpu().build_ui_state(
+    Harness::builder().with_size(vec2(w, h)).with_pixels_per_point(1.0).wgpu().build_ui_state(
         |ui, app: &mut MaterialCraftApp| {
             app.step(&ui.ctx().clone());
             app.draw(ui);
@@ -59,4 +59,28 @@ fn snapshots() {
     h.state_mut().ui.windows.new_graph = true;
     settle(&mut h, 40);
     save(&mut h, &dir, "new-graph");
+    h.state_mut().ui.windows.new_graph = false;
+
+    // A pixel processor drawing rings, with its function graph open.
+    h.state_mut().run("file.new", json!({"template": "empty", "name": "Rings"}));
+    let f = json!({"t": "function", "v": {"nodes": [
+        {"id": 1, "op": "get_pos", "pos": [0, 0]},
+        {"id": 2, "op": "const_float2", "value": {"t": "float2", "v": [0.5, 0.5]}, "pos": [0, 110]},
+        {"id": 3, "op": "sub", "inputs": [1, 2], "pos": [170, 40]},
+        {"id": 4, "op": "length", "inputs": [3], "pos": [340, 40]},
+        {"id": 5, "op": "const_float", "value": {"t": "float", "v": 60.0}, "pos": [340, 130]},
+        {"id": 6, "op": "mul", "inputs": [4, 5], "pos": [510, 60]},
+        {"id": 7, "op": "sin", "inputs": [6], "pos": [680, 60]}
+    ], "output": 7}});
+    let id = h.state_mut().run("graph.node.add", json!({"def": "pixel_processor", "at": [0, 0], "params": {"output": 1}})).unwrap()["id"].as_u64().unwrap();
+    h.state_mut().run("graph.node.param", json!({"id": id, "param": "function", "value": f}));
+    let out =
+        h.state_mut().run("graph.node.add", json!({"def": "output", "connectFrom": {"node": id}, "params": {"usage": 4}})).unwrap()["id"].as_u64().unwrap();
+    let _ = out;
+    h.state_mut().run("graph.select", json!({"ids": [id]}));
+    h.state_mut().run("view.2d", json!({"node": id}));
+    h.state_mut().fn_editor = Some(materialcraft_ui_egui::function_editor::FnEditor::new(materialcraft_engine::core::NodeId(id), "function"));
+    h.state_mut().ui.frame_all = true;
+    settle(&mut h, 40);
+    save(&mut h, &dir, "function-editor");
 }

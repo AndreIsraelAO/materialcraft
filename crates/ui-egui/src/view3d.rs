@@ -94,6 +94,7 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
     menus(app, ui);
     let avail = ui.available_size();
     let (rect, resp) = ui.allocate_exact_size(vec2(avail.x, (avail.y - 22.0).max(40.0)), Sense::click_and_drag());
+    crate::widgets::name(&resp, egui::Role::Image, "3D view");
     // Camera gestures.
     let mut moving = false;
     if resp.dragged() {
@@ -148,13 +149,14 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
         ui.horizontal_centered(|ui| {
             ui.add_space(6.0);
             ui.label(egui::RichText::new(icon::SPHERE).color(tk.text_dim));
-            egui::ComboBox::from_id_salt("scene3d").width(110.0).selected_text(scene_label(app)).show_ui(ui, |ui| {
+            let r = egui::ComboBox::from_id_salt("scene3d").width(110.0).selected_text(scene_label(app)).show_ui(ui, |ui| {
                 for (id, label) in SCENES {
                     if ui.selectable_label(app.session.view3d.scene == *id, tr(label)).clicked() {
                         app.run("view.3d", json!({"scene": id}));
                     }
                 }
             });
+            crate::widgets::name(&r.response, egui::Role::ComboBox, "Scene");
             ui.label(egui::RichText::new(format!("{}  sRGB / ACES", icon::SUN)).size(11.0).color(tk.text_dim));
         });
     });

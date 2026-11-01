@@ -123,6 +123,7 @@ fn new_graph(app: &mut MaterialCraftApp, ctx: &egui::Context) {
                             for (id, label) in row {
                                 let on = app.ui.new_graph_template == *id;
                                 let (r, resp) = ui.allocate_exact_size(vec2(94.0, 124.0), egui::Sense::click());
+                                crate::widgets::name(&resp, egui::Role::ListItem, label);
                                 if on {
                                     ui.painter().rect_filled(r, 6.0, tk.row_selected);
                                     ui.painter().rect_stroke(r, 6.0, egui::Stroke::new(1.5, tk.accent), egui::StrokeKind::Inside);
@@ -158,11 +159,12 @@ fn new_graph(app: &mut MaterialCraftApp, ctx: &egui::Context) {
                 ui.text_edit_singleline(&mut app.ui.new_graph_name);
                 ui.add_space(8.0);
                 ui.label(RichText::new(tr("Size")).strong());
-                egui::ComboBox::from_id_salt("new-size").selected_text(format!("{} px", app.ui.new_graph_size)).show_ui(ui, |ui| {
+                let r = egui::ComboBox::from_id_salt("new-size").selected_text(format!("{} px", app.ui.new_graph_size)).show_ui(ui, |ui| {
                     for s in [256u32, 512, 1024, 2048, 4096] {
                         ui.selectable_value(&mut app.ui.new_graph_size, s, format!("{s} px"));
                     }
                 });
+                crate::widgets::name(&r.response, egui::Role::ComboBox, "Size");
                 ui.add_space(8.0);
                 ui.label(RichText::new(tr("Create graph in")).strong());
                 ui.label(&app.session.pkg.name);
@@ -197,9 +199,11 @@ fn export(app: &mut MaterialCraftApp, ctx: &egui::Context) {
         let tk = Tokens::get(ui.ctx());
         let g = app.session.graph().map(|g| g.name.clone()).unwrap_or_default();
         ui.label(RichText::new(format!("{}: {g}", tr("Graph"))).strong());
+        #[cfg(not(target_arch = "wasm32"))]
         ui.horizontal(|ui| {
             ui.label(tr("Folder"));
-            ui.add(egui::TextEdit::singleline(&mut app.ui.export_dir).desired_width(280.0));
+            let r = ui.add(egui::TextEdit::singleline(&mut app.ui.export_dir).desired_width(280.0));
+            crate::widgets::name(&r, egui::Role::TextInput, "Folder");
             #[cfg(not(target_arch = "wasm32"))]
             if ui.button(icon::FOLDER_OPEN).clicked()
                 && let Some(d) = rfd::FileDialog::new().pick_folder()
@@ -225,7 +229,8 @@ fn export(app: &mut MaterialCraftApp, ctx: &egui::Context) {
         });
         ui.horizontal(|ui| {
             ui.label(tr("File names"));
-            ui.add(egui::TextEdit::singleline(&mut app.ui.export_pattern).desired_width(260.0));
+            let r = ui.add(egui::TextEdit::singleline(&mut app.ui.export_pattern).desired_width(260.0));
+            crate::widgets::name(&r, egui::Role::TextInput, "File names");
         });
         ui.label(RichText::new("$(graph) $(identifier) $(usage)").size(10.5).color(tk.text_dim));
         ui.add_space(8.0);
@@ -239,11 +244,17 @@ fn export(app: &mut MaterialCraftApp, ctx: &egui::Context) {
         });
     });
     if go {
-        if app.ui.export_dir.trim().is_empty() {
+        if app.ui.export_dir.trim().is_empty() && !cfg!(target_arch = "wasm32") {
             app.toast(tr("Choose a folder to export to"), true);
         } else {
             let depth = if app.ui.export_depth == 0 { Value::Null } else { json!(app.ui.export_depth) };
             let p = json!({"dir": app.ui.export_dir, "format": app.ui.export_format, "pattern": app.ui.export_pattern, "depth": depth});
+            #[cfg(target_arch = "wasm32")]
+            {
+                crate::web_files::export(app, &p);
+                open = false;
+            }
+            #[cfg(not(target_arch = "wasm32"))]
             if let Some(r) = app.run("file.export", p) {
                 let n = r["files"].as_array().map_or(0, Vec::len);
                 app.toast(format!("{} {n} {}", tr("Exported"), tr("files")), false);
@@ -348,36 +359,84 @@ fn shortcuts(app: &mut MaterialCraftApp, ctx: &egui::Context) {
 
 fn home(app: &mut MaterialCraftApp, ctx: &egui::Context) {
     let mut open = true;
-    modal(ctx, "home", tr("Welcome to MaterialCraft"), &mut open, vec2(520.0, 340.0), |ui| {
+    let mut create: Option<(&str, &str)> = None;
+    modal(ctx, "home", tr("Home"), &mut open, vec2(760.0, 470.0), |ui| {
         let tk = Tokens::get(ui.ctx());
-        ui.label(
-            RichText::new(tr("Build materials from noises, patterns and filters, see them live in 2D and 3D, and export the maps for any engine."))
-                .color(tk.text),
-        );
-        ui.add_space(8.0);
-        ui.horizontal(|ui| {
-            if ui.add(crate::widgets::primary_button(ui, tr("New graph"))).clicked() {
-                app.ui.windows.home = false;
-                app.ui.windows.new_graph = true;
-            }
-            if ui.button(tr("Open package...")).clicked() {
-                app.ui.windows.home = false;
-                crate::menus::invoke(app, ui.ctx(), "file.open");
-            }
+        ui.horizontal_top(|ui| {
+            // Left rail: actions and links.
+            ui.vertical(|ui| {
+                ui.set_width(150.0);
+                if ui.add(crate::widgets::primary_button(ui, tr("New graph"))).clicked() {
+                    app.ui.windows.home = false;
+                    app.ui.windows.new_graph = true;
+                }
+                ui.add_space(4.0);
+                if ui.button(format!("{}  {}", icon::FOLDER_OPEN, tr("Open package..."))).clicked() {
+                    app.ui.windows.home = false;
+                    crate::menus::invoke(app, ui.ctx(), "file.open");
+                }
+                ui.add_space(16.0);
+                ui.hyperlink_to(tr("Documentation"), "https://github.com/storytold/materialcraft#readme");
+                ui.hyperlink_to(tr("Community (Discord)"), "https://discord.gg/artcraft");
+                ui.hyperlink_to("getartcraft.com", "https://getartcraft.com/apps/materialcraft");
+                ui.add_space(16.0);
+                ui.checkbox(&mut app.ui.prefs.show_home, tr("Show at startup"));
+            });
+            ui.separator();
+            ui.vertical(|ui| {
+                ui.label(RichText::new(tr("Welcome to MaterialCraft")).size(18.0).strong().color(tk.text_strong));
+                ui.label(
+                    RichText::new(tr(
+                        "Build tileable materials from noises, patterns and filters, see them live in 2D and 3D, and export the maps for any engine.",
+                    ))
+                    .color(tk.text_dim),
+                );
+                ui.add_space(8.0);
+                ui.label(RichText::new(tr("Samples")).strong());
+                ui.horizontal_wrapped(|ui| {
+                    for (id, label) in materialcraft_engine::samples::TEMPLATES.iter().filter(|(id, _)| !matches!(*id, "empty" | "pbr")) {
+                        let (r, resp) = ui.allocate_exact_size(vec2(92.0, 116.0), egui::Sense::click());
+                        crate::widgets::name(&resp, egui::Role::ListItem, label);
+                        if resp.hovered() {
+                            ui.painter().rect_filled(r, 6.0, tk.row_hover);
+                        }
+                        let img = egui::Rect::from_min_size(r.min + vec2(6.0, 4.0), vec2(80.0, 80.0));
+                        match TEMPLATES.with(|t| t.borrow_mut().get(ui.ctx(), id)) {
+                            Some(t) => {
+                                ui.painter().image(t, img, egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)), Color32::WHITE);
+                            }
+                            None => {
+                                ui.painter().circle_filled(img.center(), 36.0, tk.row);
+                            }
+                        }
+                        let g = ui.painter().layout(tr(label).to_string(), egui::FontId::proportional(11.0), tk.text, 90.0);
+                        ui.painter().galley(egui::pos2(r.center().x - g.size().x * 0.5, img.bottom() + 6.0), g, tk.text);
+                        if resp.clicked() {
+                            create = Some((id, label));
+                        }
+                    }
+                });
+                ui.add_space(8.0);
+                ui.label(RichText::new(tr("Recent")).strong());
+                if app.ui.recent.is_empty() {
+                    ui.label(RichText::new(tr("No recent packages")).color(tk.text_dim));
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                for p in app.ui.recent.clone().into_iter().take(6) {
+                    if ui.link(&p).clicked() {
+                        open_path(app, &p);
+                        app.ui.windows.home = false;
+                    }
+                }
+            });
         });
-        ui.add_space(8.0);
-        ui.label(RichText::new(tr("Recent")).strong());
-        if app.ui.recent.is_empty() {
-            ui.label(RichText::new(tr("No recent packages")).color(tk.text_dim));
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        for p in app.ui.recent.clone() {
-            if ui.link(&p).clicked() {
-                open_path(app, &p);
-                app.ui.windows.home = false;
-            }
-        }
     });
+    if let Some((id, label)) = create {
+        if app.run("file.new", json!({"template": id, "name": label.replace(' ', "_"), "size": 1024})).is_some() {
+            app.ui.frame_all = true;
+        }
+        open = false;
+    }
     if !open {
         app.ui.windows.home = false;
     }
@@ -414,37 +473,42 @@ pub fn history(app: &mut MaterialCraftApp, ui: &mut Ui) {
     });
 }
 
-/// The function parameter of a pixel/value processor: its nodes as JSON, editable.
+/// The function parameter of a pixel/value processor: a button opening the function graph
+/// editor, and the function as JSON for copy and paste.
 pub fn function_summary(app: &mut MaterialCraftApp, ui: &mut Ui, node: NodeId, param: &str, f: &FnGraph) {
     let tk = Tokens::get(ui.ctx());
-    let id = egui::Id::unique(("fn-edit", node.0, param));
-    let mut text: String = ui.data(|d| d.get_temp(id)).unwrap_or_else(|| serde_json::to_string_pretty(f).unwrap_or_default());
-    ui.label(
-        RichText::new(format!("{} {}", f.nodes.len(), tr("function nodes; ops are listed in the docs (control-protocol.md)"))).size(10.5).color(tk.text_dim),
-    );
-    let r = ui.add(egui::TextEdit::multiline(&mut text).code_editor().desired_rows(8).desired_width(f32::INFINITY));
-    if r.changed() {
-        ui.data_mut(|d| d.insert_temp(id, text.clone()));
+    if ui.add(crate::widgets::primary_button(ui, &format!("{}  {}", icon::FLOW_ARROW, tr("Edit function graph...")))).clicked() {
+        app.fn_editor = Some(crate::function_editor::FnEditor::new(node, param));
     }
-    ui.horizontal(|ui| {
-        if ui.button(tr("Apply")).clicked() {
-            match serde_json::from_str::<FnGraph>(&text) {
-                Ok(g) => {
-                    let v = serde_json::to_value(materialcraft_engine::core::Value::Function(Box::new(g))).unwrap_or(Value::Null);
-                    app.run("graph.node.param", json!({"id": node.0, "param": param, "value": v}));
-                    ui.data_mut(|d| d.remove::<String>(id));
+    ui.label(RichText::new(format!("{} {}", f.nodes.len(), tr("function nodes"))).size(10.5).color(tk.text_dim));
+    let id = egui::Id::unique(("fn-edit", node.0, param));
+    egui::CollapsingHeader::new(tr("As JSON")).id_salt(("fn-json", node.0, param)).default_open(false).show(ui, |ui| {
+        let mut text: String = ui.data(|d| d.get_temp(id)).unwrap_or_else(|| serde_json::to_string_pretty(f).unwrap_or_default());
+        if ui.add(egui::TextEdit::multiline(&mut text).code_editor().desired_rows(8).desired_width(f32::INFINITY)).changed() {
+            ui.data_mut(|d| d.insert_temp(id, text.clone()));
+        }
+        ui.horizontal(|ui| {
+            if ui.button(tr("Apply")).clicked() {
+                match serde_json::from_str::<FnGraph>(&text) {
+                    Ok(g) => {
+                        let v = serde_json::to_value(materialcraft_engine::core::Value::Function(Box::new(g))).unwrap_or(Value::Null);
+                        app.run("graph.node.param", json!({"id": node.0, "param": param, "value": v}));
+                        ui.data_mut(|d| d.remove::<String>(id));
+                    }
+                    Err(e) => app.toast(format!("{}: {e}", tr("Bad function")), true),
                 }
-                Err(e) => app.toast(format!("{}: {e}", tr("Bad function")), true),
             }
-        }
-        if ui.button(tr("Revert")).clicked() {
-            ui.data_mut(|d| d.remove::<String>(id));
-        }
+            if ui.button(tr("Revert")).clicked() {
+                ui.data_mut(|d| d.remove::<String>(id));
+            }
+        });
     });
 }
 
 /// File menu actions that need a file dialog. Returns true when handled.
-pub fn file_action(app: &mut MaterialCraftApp, id: &str) -> bool {
+pub fn file_action(app: &mut MaterialCraftApp, ctx: &egui::Context, id: &str) -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = ctx;
     #[cfg(not(target_arch = "wasm32"))]
     {
         match id {
@@ -491,12 +555,12 @@ pub fn file_action(app: &mut MaterialCraftApp, id: &str) -> bool {
     #[cfg(target_arch = "wasm32")]
     {
         match id {
-            "file.open" | "file.save" | "file.saveAs" | "file.importBitmap" => {
-                app.toast(tr("Files in the browser are coming soon: use the desktop app or the CLI for now."), true);
-                true
-            }
-            _ => false,
+            "file.open" => crate::web_files::open(ctx),
+            "file.importBitmap" => crate::web_files::import_bitmap(ctx),
+            "file.save" | "file.saveAs" => crate::web_files::save(app),
+            _ => return false,
         }
+        true
     }
 }
 
@@ -509,6 +573,3 @@ pub fn open_path(app: &mut MaterialCraftApp, path: &str) {
         app.toast(format!("{} {path}", tr("Opened")), false);
     }
 }
-
-/// Asynchronous file results (the browser's pickers); nothing to do on the desktop.
-pub fn poll_files(_app: &mut MaterialCraftApp) {}

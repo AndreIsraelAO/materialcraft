@@ -6,6 +6,12 @@ use egui::{Color32, CornerRadius, Response, RichText, Sense, Stroke, Ui, vec2};
 
 use crate::theme::Tokens;
 
+/// Give a custom widget an accessible name and role (screen readers, AccessKit, tests).
+pub fn name(resp: &Response, role: egui::Role, label: &str) {
+    let label = label.to_string();
+    resp.widget_info(move || egui::WidgetInfo::labeled(role, true, label.clone()));
+}
+
 /// The drag-and-drop payload of type `T` released on `resp` this frame. Unlike
 /// [`Response::dnd_release_payload`] (which clears a payload of any type), it leaves payloads
 /// of other types for the next drop target.
@@ -24,6 +30,7 @@ pub fn slider(ui: &mut Ui, label: &str, value: &mut f32, range: std::ops::RangeI
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let mut text = format!("{:.*}", decimals, value);
             let r = ui.add(egui::TextEdit::singleline(&mut text).desired_width(44.0).align(egui::Align2::RIGHT_CENTER).frame(egui::Frame::NONE));
+            name(&r, egui::Role::TextInput, label);
             if r.lost_focus()
                 && let Ok(v) = text.trim().parse::<f32>()
                 && v.is_finite()
@@ -33,6 +40,8 @@ pub fn slider(ui: &mut Ui, label: &str, value: &mut f32, range: std::ops::RangeI
         });
     });
     let (rect, mut resp) = ui.allocate_exact_size(vec2(w, 14.0), Sense::click_and_drag());
+    let (v, l) = (*value as f64, label.to_string());
+    resp.widget_info(move || egui::WidgetInfo::slider(true, v, l.clone()));
     if (resp.dragged() || resp.clicked())
         && let Some(p) = resp.interact_pointer_pos()
     {
@@ -53,6 +62,8 @@ pub fn bar_slider(ui: &mut Ui, label: &str, value: &mut f32, range: std::ops::Ra
     let tk = Tokens::get(ui.ctx());
     let (lo, hi) = (*range.start(), *range.end());
     let (rect, mut resp) = ui.allocate_exact_size(vec2(width, 28.0), Sense::click_and_drag());
+    let (v, l) = (*value as f64, label.to_string());
+    resp.widget_info(move || egui::WidgetInfo::slider(true, v, l.clone()));
     if (resp.dragged() || resp.clicked())
         && let Some(p) = resp.interact_pointer_pos()
     {
@@ -123,11 +134,12 @@ pub fn primary_button<'a>(ui: &Ui, text: &str) -> egui::Button<'a> {
 pub fn combo(ui: &mut Ui, label: &str, selected: impl Into<egui::WidgetText>, menu: impl FnOnce(&mut Ui)) {
     ui.horizontal(|ui| {
         ui.label(label);
-        egui::ComboBox::from_id_salt(label)
+        let r = egui::ComboBox::from_id_salt(label)
             .width(ui.available_width().max(60.0))
             .wrap_mode(egui::TextWrapMode::Truncate)
             .selected_text(selected)
             .show_ui(ui, menu);
+        name(&r.response, egui::Role::ComboBox, label);
     });
 }
 
@@ -159,6 +171,7 @@ pub fn chip(ui: &mut Ui, text: &str, on: bool) -> Response {
     let galley = ui.painter().layout_no_wrap(text.into(), egui::FontId::proportional(11.0), tk.text);
     let size = vec2(galley.size().x + 14.0, 20.0);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    name(&resp, egui::Role::Button, text);
     let p = ui.painter();
     let fill = if on {
         tk.tool_active
@@ -179,6 +192,7 @@ pub fn color_swatch(ui: &mut Ui, id: &str, linear: &mut [f32; 3], width: f32) ->
     let srgb = linear.map(|v| (materialcraft_engine::image::linear_to_srgb(v) * 255.0 + 0.5) as u8);
     let mut c = Color32::from_rgb(srgb[0], srgb[1], srgb[2]);
     let (rect, resp) = ui.allocate_exact_size(vec2(width, 18.0), Sense::click());
+    name(&resp, egui::Role::ColorWell, id);
     ui.painter().rect(rect, 4.0, c, Stroke::new(1.0, tk.field_border), egui::StrokeKind::Inside);
     let popup = ui.make_persistent_id(id);
     if resp.clicked() {
