@@ -1,7 +1,7 @@
 //! The 2D view: one node output at full preview resolution, with pan and zoom, channel isolation,
-//! a 3×3 tiling check, a pixel readout and the size/format line.
+//! a 3×3 tiling check, a histogram, a pixel readout and the size/format line.
 
-use egui::{Color32, ColorImage, Rect, RichText, Sense, TextureHandle, TextureOptions, Ui, pos2, vec2};
+use egui::{Color32, ColorImage, Rect, Sense, TextureHandle, TextureOptions, Ui, pos2, vec2};
 use egui_phosphor::regular as icon;
 use materialcraft_engine::image::{Image, Kind};
 use serde_json::json;
@@ -15,6 +15,21 @@ pub struct View2dState {
     tex: Option<(u64, TextureHandle)>,
     /// The last shown image (RGBA8, for `view.screenshot`).
     pub shown: Option<(u32, u32, Vec<u8>)>,
+    /// Per-channel histograms of `shown` (R, G, B; one channel for gray), keyed like `tex`.
+    histogram: Option<(u64, Vec<[u32; BINS]>)>,
+}
+
+const BINS: usize = 64;
+
+/// Histograms of the displayed 8-bit values: one for gray or isolated channels, else R, G and B.
+fn histogram(px: &[u8], channels: usize) -> Vec<[u32; BINS]> {
+    let mut h = vec![[0u32; BINS]; channels];
+    for p in px.chunks_exact(4) {
+        for (c, bins) in h.iter_mut().enumerate() {
+            bins[p[c] as usize * BINS / 256] += 1;
+        }
+    }
+    h
 }
 
 pub fn title(app: &MaterialCraftApp) -> String {
@@ -52,6 +67,10 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
             if crate::widgets::icon_button(ui, icon::GRID_FOUR, tr("Tile 3x3"), app.session.view2d.tiled, 20.0).clicked() {
                 let t = !app.session.view2d.tiled;
                 app.run("view.2d", json!({"tiled": t}));
+            }
+            if crate::widgets::icon_button(ui, icon::CHART_BAR, tr("Histogram"), app.session.view2d.histogram, 20.0).clicked() {
+                let h = !app.session.view2d.histogram;
+                app.run("view.2d", json!({"histogram": h}));
             }
             if crate::widgets::icon_button(ui, icon::CORNERS_OUT, tr("Fit"), app.ui.image_camera.fit, 20.0).clicked() {
                 app.ui.image_camera = crate::state::ImageCamera::default();
@@ -148,6 +167,10 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
             p.rect_stroke(Rect::from_center_size(center, size), 0.0, egui::Stroke::new(1.0, Color32::from_white_alpha(60)), egui::StrokeKind::Outside);
         }
     }
+    if app.session.view2d.histogram {
+        let single = img.is_gray() || app.session.view2d.channel != "rgba";
+        draw_histogram(&mut app.view2d, &p, rect, key, single);
+    }
     // Info line: size, format, zoom and the pixel under the pointer.
     let info = Rect::from_min_size(pos2(rect.left(), rect.bottom()), vec2(rect.width(), 20.0));
     let bits = app
@@ -171,7 +194,50 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
     }
     ui.painter().rect_filled(info, 0.0, tk.panel);
     ui.painter().text(info.left_center() + vec2(6.0, 0.0), egui::Align2::LEFT_CENTER, text, egui::FontId::proportional(11.0), tk.text_dim);
-    let _ = RichText::new("");
+}
+
+/// The histogram card in the view's bottom-right corner, computed once per shown image.
+fn draw_histogram(st: &mut View2dState, p: &egui::Painter, rect: Rect, key: u64, single: bool) {
+    if st.histogram.as_ref().is_none_or(|(k, _)| *k != key) {
+        let Some((_, _, px)) = &st.shown else { return };
+        st.histogram = Some((key, histogram(px, if single { 1 } else { 3 })));
+    }
+    let Some((_, hist)) = &st.histogram else { return };
+    let card = Rect::from_min_size(rect.right_bottom() - vec2(BINS as f32 * 3.0 + 16.0, 96.0), vec2(BINS as f32 * 3.0 + 8.0, 88.0));
+    p.rect_filled(card, 4.0, Color32::from_black_alpha(170));
+    let plot = card.shrink(6.0);
+    let peak = hist.iter().flat_map(|b| b.iter()).copied().max().unwrap_or(1).max(1) as f32;
+    let colors: &[Color32] = if single {
+        &[Color32::from_gray(210)]
+    } else {
+        &[
+            Color32::from_rgba_unmultiplied(235, 80, 80, 150),
+            Color32::from_rgba_unmultiplied(80, 210, 90, 150),
+            Color32::from_rgba_unmultiplied(90, 130, 255, 150),
+        ]
+    };
+    let w = plot.width() / BINS as f32;
+    for (bins, color) in hist.iter().zip(colors) {
+        for (i, n) in bins.iter().enumerate() {
+            let h = plot.height() * (*n as f32 / peak).sqrt();
+            let x = plot.left() + i as f32 * w;
+            p.rect_filled(Rect::from_min_max(pos2(x, plot.bottom() - h), pos2(x + w, plot.bottom())), 0.0, *color);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn histogram_counts_every_pixel_once_per_channel() {
+        let px = [0, 128, 255, 255, 255, 128, 0, 255];
+        let h = super::histogram(&px, 3);
+        assert_eq!(h.len(), 3);
+        assert!(h.iter().all(|b| b.iter().sum::<u32>() == 2));
+        assert_eq!(h[0][0], 1);
+        assert_eq!(h[0][super::BINS - 1], 1);
+        assert_eq!(h[1][32], 2);
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

@@ -23,7 +23,7 @@ pub const ENVIRONMENTS: &[(&str, &str)] = &[("studio", "Studio"), ("sunset", "Su
 
 pub(crate) fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!("view.2d", "View output in 2D view", [], None, "{node?, port?, tiled?, channel? (rgba|r|g|b|a)}", has_graph, view2d),
+        cmd!("view.2d", "View output in 2D view", [], None, "{node?, port?, tiled?, channel? (rgba|r|g|b|a), histogram?}", has_graph, view2d),
         cmd!(
             "view.3d",
             "3D view settings",
@@ -71,6 +71,9 @@ fn view2d(s: &mut Session, p: &J) -> Result<J> {
     }
     if let Some(t) = boolp(p, "tiled") {
         s.view2d.tiled = t;
+    }
+    if let Some(h) = boolp(p, "histogram") {
+        s.view2d.histogram = h;
     }
     if let Some(c) = strp(p, "channel") {
         if !["rgba", "r", "g", "b", "a"].contains(&c) {

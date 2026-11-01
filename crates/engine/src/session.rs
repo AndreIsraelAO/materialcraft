@@ -64,6 +64,8 @@ pub struct View2d {
     pub tiled: bool,
     /// `rgba`, `r`, `g`, `b`, `a`.
     pub channel: String,
+    /// Overlay the luminance/channel histogram.
+    pub histogram: bool,
 }
 
 #[derive(Clone)]
