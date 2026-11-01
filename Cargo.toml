@@ -1,7 +1,38 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/image", "crates/geom", "crates/nodes", "crates/eval", "crates/formats", "crates/engine", "crates/render", "crates/automation", "apps/materialcraft-cli", "crates/ui-egui", "apps/materialcraft", "xtask"]
+members = [
+    "crates/core",
+    "crates/image",
+    "crates/geom",
+    "crates/nodes",
+    "crates/eval",
+    "crates/formats",
+    "crates/engine",
+    "crates/render",
+    "crates/automation",
+    "crates/ui-egui",
+    "apps/materialcraft",
+    "apps/materialcraft-cli",
+    "apps/materialcraft-web",
+    "xtask",
+]
 exclude = ["vendor"]
+# The web app only builds for wasm32 (trunk); everything else is the default.
+default-members = [
+    "crates/core",
+    "crates/image",
+    "crates/geom",
+    "crates/nodes",
+    "crates/eval",
+    "crates/formats",
+    "crates/engine",
+    "crates/render",
+    "crates/automation",
+    "crates/ui-egui",
+    "apps/materialcraft",
+    "apps/materialcraft-cli",
+    "xtask",
+]
 
 [workspace.package]
 version = "0.1.0"

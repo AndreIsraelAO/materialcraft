@@ -2395,6 +2395,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "materialcraft-web"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "js-sys",
+ "log",
+ "materialcraft-engine",
+ "materialcraft-ui-egui",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "maybe-owned"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -78,7 +78,8 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
         return;
     };
     let key = app.session.cooked.nodes.get(&id).map_or(0, |r| r.key)
-        ^ (app.session.view2d.port as u64).wrapping_mul(0x9e37) ^ (app.session.view2d.channel.len() as u64 * 31)
+        ^ (app.session.view2d.port as u64).wrapping_mul(0x9e37)
+        ^ (app.session.view2d.channel.len() as u64 * 31)
         ^ app.session.view2d.channel.bytes().next().unwrap_or(0) as u64;
     if app.view2d.tex.as_ref().is_none_or(|(k, _)| *k != key) {
         let px = rgba8(&img, &app.session.view2d.channel);

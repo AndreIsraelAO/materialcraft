@@ -1,0 +1,13 @@
+MaterialCraft app icon (materialcraft.svg, materialcraft-small.svg and every file derived from them in
+this directory: materialcraft.icns, materialcraft.ico, hicolor/).
+
+An original placeholder made for this project in code by the MaterialCraft contributors (no
+third-party material), until the owner's mascot artwork replaces it. Licensed like the rest of
+MaterialCraft, under either of
+
+  * Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0)
+  * MIT license (https://opensource.org/licenses/MIT)
+
+at your option.
+
+Regenerate the derived files with packaging/icons.sh.

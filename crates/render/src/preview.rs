@@ -54,6 +54,8 @@ pub struct Scene {
     pub mesh: Arc<Mesh>,
     pub bvh: Arc<Bvh>,
     pub radius: f32,
+    /// Center of the mesh bounds (the camera orbits it).
+    pub center: Vec3,
 }
 
 impl Scene {
@@ -65,8 +67,10 @@ impl Scene {
             mesh.compute_tangents();
         }
         let bvh = Bvh::new(&mesh);
-        let radius = mesh.radius().max(1e-3);
-        Scene { mesh: Arc::new(mesh), bvh: Arc::new(bvh), radius }
+        let (lo, hi) = mesh.bounds();
+        let center = (lo + hi) * 0.5;
+        let radius = ((hi - lo).length() * 0.5).max(1e-3);
+        Scene { mesh: Arc::new(mesh), bvh: Arc::new(bvh), radius, center }
     }
 
     /// A built-in scene (`rounded_cube`, `sphere`, …); unknown ids give the rounded cube.
@@ -141,7 +145,7 @@ impl Default for Settings {
 /// The orbit camera for `s` around `scene`.
 pub fn camera(scene: &Scene, s: &Settings) -> OrbitCamera {
     OrbitCamera {
-        target: Vec3::ZERO,
+        target: scene.center,
         yaw: s.yaw.to_radians(),
         pitch: s.pitch.clamp(-89.0, 89.0).to_radians(),
         distance: s.distance.clamp(1.05, 50.0) * scene.radius,
