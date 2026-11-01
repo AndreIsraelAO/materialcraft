@@ -1,0 +1,17 @@
+[package]
+name = "materialcraft-formats"
+description = "MaterialCraft file formats: .mcraft packages, bitmap import, texture export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+materialcraft-core = { workspace = true }
+materialcraft-image = { workspace = true }
+image = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+zip = { workspace = true }

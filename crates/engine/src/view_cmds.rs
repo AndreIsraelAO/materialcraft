@@ -1,0 +1,152 @@
+//! View commands: the 2D and 3D views, the preview size, the library listing and inspection.
+
+use serde_json::{Value as J, json};
+
+use materialcraft_core::NodeId;
+
+use crate::commands::{CommandSpec, always, bad, boolp, f32p, has_graph, strp, u64p};
+use crate::{Result, Session, cmd};
+
+/// Built-in 3D view scenes: (id, label).
+pub const SCENES: &[(&str, &str)] = &[
+    ("cube", "Cube"),
+    ("cylinder", "Cylinder"),
+    ("plane", "Plane"),
+    ("sphere", "Sphere"),
+    ("material_ball", "Mat ball"),
+    ("rounded_cube", "Rounded cube"),
+    ("torus", "Torus"),
+];
+
+/// Environments: (id, label).
+pub const ENVIRONMENTS: &[(&str, &str)] = &[("studio", "Studio"), ("sunset", "Sunset"), ("overcast", "Overcast"), ("night", "Night")];
+
+pub(crate) fn specs() -> Vec<CommandSpec> {
+    vec![
+        cmd!("view.2d", "View output in 2D view", [], None, "{node?, port?, tiled?, channel? (rgba|r|g|b|a)}", has_graph, view2d),
+        cmd!(
+            "view.3d",
+            "3D view settings",
+            [],
+            None,
+            "{scene? (cube|cylinder|plane|sphere|material_ball|rounded_cube|torus), tiling?, yaw?, pitch?, distance?, environment? (studio|sunset|overcast|night), envRotation?, exposure?, heightScale?, axis?, grid?}",
+            always,
+            view3d
+        ),
+        cmd!("view.3d.reset", "Reset scene", [], None, "{}", always, |s, _| {
+            s.view3d = crate::View3d::default();
+            Ok(J::Null)
+        }),
+        cmd!("view.previewSize", "Preview size", [], None, "{size: 64..8192, or 0 for full size} caps node outputs while editing", always, preview_size),
+        cmd!(
+            "library.list",
+            "Library",
+            [],
+            None,
+            "{filter?, category?} every node definition: id, label, category, inputs, outputs, parameters",
+            always,
+            library
+        ),
+        cmd!(
+            "session.inspect",
+            "Inspect",
+            [],
+            None,
+            "{graph?} the package, the open graph (nodes, wires, parameters, errors, timings), views and history",
+            always,
+            |s, p| { Ok(crate::inspect::session(s, u64p(p, "graph").map(|g| g as usize))) }
+        ),
+    ]
+}
+
+fn view2d(s: &mut Session, p: &J) -> Result<J> {
+    if let Some(n) = u64p(p, "node") {
+        s.graph()?.node(NodeId(n)).map_err(|_| bad("view.2d", format!("no node {n}")))?;
+        s.view2d.node = Some(NodeId(n));
+        s.view2d.port = 0;
+    }
+    if let Some(port) = u64p(p, "port") {
+        s.view2d.port = port as usize;
+    }
+    if let Some(t) = boolp(p, "tiled") {
+        s.view2d.tiled = t;
+    }
+    if let Some(c) = strp(p, "channel") {
+        if !["rgba", "r", "g", "b", "a"].contains(&c) {
+            return Err(bad("view.2d", "`channel` is rgba, r, g, b or a"));
+        }
+        s.view2d.channel = c.into();
+    }
+    Ok(serde_json::to_value(&s.view2d).unwrap_or(J::Null))
+}
+
+fn view3d(s: &mut Session, p: &J) -> Result<J> {
+    let v = &mut s.view3d;
+    if let Some(sc) = strp(p, "scene") {
+        if !SCENES.iter().any(|(id, _)| *id == sc) {
+            return Err(bad("view.3d", format!("unknown scene `{sc}`")));
+        }
+        v.scene = sc.into();
+    }
+    if let Some(e) = strp(p, "environment") {
+        if !ENVIRONMENTS.iter().any(|(id, _)| *id == e) {
+            return Err(bad("view.3d", format!("unknown environment `{e}`")));
+        }
+        v.environment = e.into();
+    }
+    if let Some(t) = f32p(p, "tiling") {
+        v.tiling = t.clamp(0.1, 64.0);
+    }
+    if let Some(t) = f32p(p, "yaw") {
+        v.yaw = t.rem_euclid(360.0);
+    }
+    if let Some(t) = f32p(p, "pitch") {
+        v.pitch = t.clamp(-89.0, 89.0);
+    }
+    if let Some(t) = f32p(p, "distance") {
+        v.distance = t.clamp(1.2, 20.0);
+    }
+    if let Some(t) = f32p(p, "envRotation") {
+        v.env_rotation = t.rem_euclid(360.0);
+    }
+    if let Some(t) = f32p(p, "exposure") {
+        v.exposure = t.clamp(-10.0, 10.0);
+    }
+    if let Some(t) = f32p(p, "heightScale") {
+        v.height_scale = t.clamp(0.0, 0.5);
+    }
+    if let Some(b) = boolp(p, "axis") {
+        v.show_axis = b;
+    }
+    if let Some(b) = boolp(p, "grid") {
+        v.show_grid = b;
+    }
+    Ok(serde_json::to_value(&s.view3d).unwrap_or(J::Null))
+}
+
+fn preview_size(s: &mut Session, p: &J) -> Result<J> {
+    let size = u64p(p, "size").ok_or_else(|| bad("view.previewSize", "`size` is required"))?;
+    s.preview_size = if size == 0 { None } else { Some(size.clamp(64, 8192) as u32) };
+    s.dirty = true;
+    Ok(json!({"previewSize": s.preview_size}))
+}
+
+fn library(_: &mut Session, p: &J) -> Result<J> {
+    let f = strp(p, "filter").map(str::to_ascii_lowercase);
+    let cat = strp(p, "category").map(str::to_ascii_lowercase);
+    Ok(J::Array(
+        materialcraft_nodes::catalog()
+            .iter()
+            .filter(|d| f.as_ref().is_none_or(|f| d.id.contains(f.as_str()) || d.label.to_ascii_lowercase().contains(f.as_str())))
+            .filter(|d| cat.as_ref().is_none_or(|c| d.category.to_ascii_lowercase().contains(c.as_str())))
+            .map(|d| {
+                json!({
+                    "id": d.id, "label": d.label, "category": d.category, "description": d.description,
+                    "inputs": d.inputs.iter().map(|p| json!({"id": p.id, "label": p.label, "kind": format!("{:?}", p.kind)})).collect::<Vec<_>>(),
+                    "outputs": d.outputs.iter().map(|p| json!({"id": p.id, "label": p.label, "kind": format!("{:?}", p.kind)})).collect::<Vec<_>>(),
+                    "params": d.params.iter().map(|p| json!({"id": p.id, "label": p.label, "default": p.default, "min": p.min, "max": p.max, "options": p.options})).collect::<Vec<_>>(),
+                })
+            })
+            .collect(),
+    ))
+}
