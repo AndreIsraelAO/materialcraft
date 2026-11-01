@@ -10,12 +10,17 @@
 pub mod atomic;
 pub mod catalog;
 pub mod filters;
+pub mod filters_more;
+pub mod flood_fill;
 pub mod function;
 pub mod generators;
 pub mod material;
+pub mod material_more;
 pub mod noise;
+pub mod noises_more;
 pub mod ops;
 pub mod patterns;
+pub mod patterns_more;
 
 pub use catalog::{CookResult, Ctx, NodeDef, ParamDef, PortDef, PortKind, catalog, categories, find, resolve_params};
 
@@ -58,12 +63,43 @@ mod tests {
                 }
             }
         }
-        assert!(catalog().len() >= 100, "{} nodes", catalog().len());
+        assert!(catalog().len() >= 200, "{} nodes", catalog().len());
     }
 
     #[test]
     fn noises_tile() {
-        for id in ["perlin_noise", "clouds_1", "cells_1", "voronoi", "brick_generator", "tile_generator", "hexagons"] {
+        for id in [
+            "perlin_noise",
+            "clouds_1",
+            "cells_1",
+            "voronoi",
+            "brick_generator",
+            "tile_generator",
+            "hexagons",
+            "value_noise",
+            "ridged_fractal",
+            "voronoi_fractal",
+            "cells_fractal",
+            "directional_noise",
+            "fibers",
+            "messy_fibers",
+            "leather",
+            "microscope",
+            "gaussian_spots",
+            "crackle",
+            "sand_dunes",
+            "wood_grain",
+            "marble",
+            "stones",
+            "ripples",
+            "concrete",
+            "bark",
+            "grid_lines",
+            "dots_grid",
+            "chevron",
+            "basketweave",
+            "tread_plate",
+        ] {
             let def = find(id).unwrap();
             let img = &cook(def, &[], 64).unwrap()[0];
             // The jump across the wrap is no larger than typical neighbouring differences.
