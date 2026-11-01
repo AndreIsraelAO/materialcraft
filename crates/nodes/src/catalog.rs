@@ -317,15 +317,21 @@ pub fn catalog() -> &'static [NodeDef] {
     CAT.get_or_init(|| {
         let mut v = Vec::new();
         v.extend(crate::atomic::defs());
+        v.extend(crate::fx_map::defs());
+        v.extend(crate::svg::defs());
+        v.extend(crate::text::defs());
         v.extend(crate::generators::defs());
         v.extend(crate::noises_more::defs());
+        v.extend(crate::noise3d::defs());
         v.extend(crate::patterns::defs());
         v.extend(crate::patterns_more::defs());
         v.extend(crate::filters::defs());
         v.extend(crate::filters_more::defs());
+        v.extend(crate::filters_extra::defs());
         v.extend(crate::flood_fill::defs());
         v.extend(crate::material::defs());
         v.extend(crate::material_more::defs());
+        v.extend(crate::weathering::defs());
         v
     })
 }

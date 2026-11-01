@@ -38,7 +38,7 @@ pub(crate) fn perlin_xy(x: f32, y: f32, px: i32, py: i32, seed: u32) -> f32 {
 
 /// Fractal sum of `f(level multiplier, octave)` (each 0..1): `octaves` layers, each twice as fine
 /// and `gain` times weaker. Normalized to 0..1.
-fn fractal(octaves: i32, gain: f32, f: impl Fn(f32, u32) -> f32) -> f32 {
+pub(crate) fn fractal(octaves: i32, gain: f32, f: impl Fn(f32, u32) -> f32) -> f32 {
     let (mut sum, mut amp, mut norm, mut m) = (0.0, 1.0, 0.0, 1.0);
     for o in 0..octaves.clamp(1, 10) as u32 {
         sum += f(m, o) * amp;
