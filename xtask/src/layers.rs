@@ -202,7 +202,7 @@ mod tests {
         .unwrap();
         let g = from_metadata(&meta).unwrap();
         let nodes = g.iter().find(|c| c.name == "materialcraft-nodes").unwrap();
-        assert!(nodes.deps[0].workspace && !compose.deps[1].workspace);
+        assert!(nodes.deps[0].workspace && !nodes.deps[1].workspace);
         assert_eq!(nodes.deps[2].kind, Dev);
         assert!(check(&g).is_empty());
     }

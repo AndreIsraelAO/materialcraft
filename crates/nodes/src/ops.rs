@@ -9,7 +9,7 @@ use rayon::prelude::*;
 /// Gaussian blur with standard deviation `sigma` (pixels). Small sigmas use a sampled kernel;
 /// larger ones three box passes (a close Gaussian approximation in O(1) per pixel).
 pub fn gaussian(img: &Image, sigma: f32, tile: bool) -> Image {
-    if !(sigma > 0.05) || !sigma.is_finite() {
+    if sigma.is_nan() || sigma <= 0.05 || !sigma.is_finite() {
         return img.clone();
     }
     let sigma = sigma.min(img.w.max(img.h) as f32);
@@ -42,7 +42,7 @@ fn convolve_1d(src: &Image, k: &[f32], r: i64, horizontal: bool, tile: bool) -> 
         for (i, kv) in k.iter().enumerate() {
             let o = i as i64 - r;
             let p = if horizontal { src.get(x as i64 + o, y as i64, tile) } else { src.get(x as i64, y as i64 + o, tile) };
-            for ch in 0..c.max(1).min(4) {
+            for ch in 0..c.clamp(1, 4) {
                 acc[ch] += p[ch] * kv;
             }
         }

@@ -35,7 +35,7 @@ pub(crate) fn defs() -> Vec<NodeDef> {
             .output("ambient_occlusion", "Ambient occlusion", PortKind::Gray)
             .cook(height_normal_ao),
         node("albedo_safe", "Albedo Safe Color", PBR)
-            .desc("Keeps base colors inside the physically plausible range (sRGB 30–240).")
+            .desc("Keeps base colors inside the physically plausible range (sRGB 30-240).")
             .color_in("input", "Base color")
             .color_out()
             .cook(albedo_safe),

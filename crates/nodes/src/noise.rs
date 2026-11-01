@@ -173,7 +173,7 @@ mod tests {
         let a = cellular(0.1, 0.2, 5, 1.0, 0, 3).f1;
         let b = cellular(5.1, 0.2, 5, 1.0, 0, 3).f1;
         assert!((a - b).abs() < 1e-4);
-        assert!(a >= 0.0 && a < 1.5);
+        assert!((0.0..1.5).contains(&a));
     }
 
     #[test]

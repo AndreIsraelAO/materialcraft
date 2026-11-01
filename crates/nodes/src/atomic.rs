@@ -472,7 +472,7 @@ pub fn transform_sample(img: &Image, u: f32, v: f32, offset: [f32; 2], scale: [f
     let (x, y) = (x * c - y * s, x * s + y * c);
     let (sx, sy) = (if scale[0].abs() < 1e-4 { 1e-4 } else { scale[0] }, if scale[1].abs() < 1e-4 { 1e-4 } else { scale[1] });
     let (su, sv) = (x / sx + 0.5, y / sy + 0.5);
-    if !tile && !(0.0..1.0).contains(&su) || !tile && !(0.0..1.0).contains(&sv) {
+    if !tile && (!(0.0..1.0).contains(&su) || !(0.0..1.0).contains(&sv)) {
         return None;
     }
     Some(if nearest { img.sample_nearest(su, sv, tile) } else { img.sample(su, sv, tile) })

@@ -257,7 +257,7 @@ pub(crate) fn defs() -> Vec<NodeDef> {
             .color_out()
             .cook(normal_blend),
         node("normal_invert", "Normal Invert", NORMAL)
-            .desc("Flips the green (and optionally red) channel: OpenGL ↔ DirectX.")
+            .desc("Flips the green (and optionally red) channel: OpenGL / DirectX.")
             .color_in("input", "Normal")
             .boolean("red", "Invert red", false)
             .boolean("green", "Invert green", true)

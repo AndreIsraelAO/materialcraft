@@ -21,7 +21,8 @@ struct B<'g> {
 
 impl B<'_> {
     fn n(&mut self, def: &str, x: f32, y: f32, params: &[(&str, Value)]) -> NodeId {
-        let id = self.g.add_node(def, [x, y]);
+        // Node cards are about 100 × 135 with thumbnails: spread the layout to fit them.
+        let id = self.g.add_node(def, [x * 1.1, y * 1.3]);
         if let Ok(n) = self.g.node_mut(id) {
             for (k, v) in params {
                 n.params.insert((*k).into(), v.clone());
@@ -39,7 +40,7 @@ impl B<'_> {
     /// The six PBR outputs at `x`, fed by the given nodes.
     fn outputs(&mut self, x: f32, feeds: &[(NodeId, &str, u32, &str)]) {
         for (i, (from, port, usage, ident)) in feeds.iter().enumerate() {
-            let o = self.n("output", x, i as f32 * 110.0, &[("usage", Value::Enum(*usage)), ("identifier", Value::Text((*ident).into()))]);
+            let o = self.n("output", x, i as f32 * 125.0, &[("usage", Value::Enum(*usage)), ("identifier", Value::Text((*ident).into()))]);
             self.cp(*from, port, o, "input");
         }
     }
@@ -110,7 +111,7 @@ fn bricks(b: &mut B) {
     let chip = b.n("blend", 180.0, 90.0, &[("mode", e(3)), ("opacity", f(0.35))]);
     b.c(cells, chip, "foreground");
     b.c(bricks, chip, "background");
-    let erode = b.n("slope_blur", 360.0, 90.0, &[("intensity", f(3.0)), ("mode", e(1))]);
+    let erode = b.n("slope_blur", 360.0, 90.0, &[("intensity", f(1.2)), ("mode", e(1))]);
     b.c(chip, erode, "input");
     b.c(grunge, erode, "slope");
     let height = b.n("levels", 540.0, 90.0, &[("in_high", f(0.9))]);
@@ -128,7 +129,7 @@ fn bricks(b: &mut B) {
         b.n("gradient_map", 720.0, 300.0, &[("gradient", grad(&[(0.0, [0.18, 0.05, 0.03]), (0.5, [0.42, 0.12, 0.06]), (1.0, [0.62, 0.28, 0.16])]))]);
     b.c(mix, brick_col, "input");
     let mortar = b.n("uniform", 720.0, 440.0, &[("color", col(0.42, 0.40, 0.36))]);
-    let mask = b.n("histogram_scan", 720.0, 560.0, &[("position", f(0.15)), ("contrast", f(0.8))]);
+    let mask = b.n("histogram_scan", 720.0, 560.0, &[("position", f(0.92)), ("contrast", f(0.85))]);
     b.c(height, mask, "input");
     let base = b.n("blend", 900.0, 360.0, &[("mode", e(0))]);
     b.c(brick_col, base, "foreground");

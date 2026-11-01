@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/image", "crates/geom", "crates/nodes", "crates/eval", "crates/formats", "crates/engine", "xtask"]
+members = ["crates/core", "crates/image", "crates/geom", "crates/nodes", "crates/eval", "crates/formats", "crates/engine", "crates/render", "crates/automation", "apps/materialcraft-cli", "crates/ui-egui", "apps/materialcraft", "xtask"]
 exclude = ["vendor"]
 
 [workspace.package]
@@ -47,6 +47,7 @@ cap-std = "4"
 getrandom = "0.3"
 # Shared Craft egui components (widget palette, icon buttons, panel docking): storytold/craft-libs,
 # MIT OR Apache-2.0, pinned to one rev (the one TextureCraft pins).
+egui_kittest = "0.37"
 craft-ui = { git = "https://github.com/storytold/craft-libs", rev = "f8f8829cc7be65d466d687dae381d1ca60e31242", features = ["serde"] }
 
 # egui 0.37 and winit: the suite's forks (storytold/egui, storytold/winit), as craft-libs pins them.
@@ -61,6 +62,7 @@ egui-wgpu = { git = "https://github.com/storytold/egui.git", rev = "6d518fc79968
 egui_glow = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 eframe = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 winit = { git = "https://github.com/storytold/winit.git", rev = "a517b3846ee8457d84ee4975110bfda6797c44dc" }
+egui_kittest = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 # egui-phosphor has no release for egui 0.37 (vendor/egui-phosphor/VENDORED.md).
 egui-phosphor = { path = "vendor/egui-phosphor" }
 

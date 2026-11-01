@@ -1,0 +1,33 @@
+[package]
+name = "materialcraft-ui-egui"
+description = "MaterialCraft's egui shell: docks, graph editor, library, 2D and 3D views, properties"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+materialcraft-engine = { workspace = true }
+materialcraft-render = { workspace = true }
+eframe = { workspace = true, features = ["default_fonts", "wgpu", "persistence"] }
+egui = { workspace = true }
+craft-ui = { workspace = true }
+egui-phosphor = { version = "0.14", features = ["regular"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+base64 = "0.22"
+image = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rfd = { workspace = true }
+# Floating panels open as OS windows.
+craft-ui = { workspace = true, features = ["native-windows"] }
+
+# winit needs a window system on Linux, so the crate's own tests build with X11.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+eframe = { workspace = true, features = ["x11"] }
+# Offscreen renders of the real UI (tests/snapshot.rs).
+egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }

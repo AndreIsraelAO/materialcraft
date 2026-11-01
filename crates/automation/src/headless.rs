@@ -1,0 +1,245 @@
+//! The headless backend: a [`Session`] plus file I/O and windowless renders. Synchronous and
+//! UI-free; the MCP server, the RPC server and the CLI all drive it.
+
+use std::path::Path;
+
+use materialcraft_engine::core::NodeId;
+use materialcraft_engine::{Session, commands, file_cmds, inspect};
+use materialcraft_render::{Lighting, Maps, Scene, Settings};
+use serde_json::{Value, json};
+
+use crate::budgets::{MAX_LOCAL_RENDER_SIDE, MAX_PNG_SIDE, check_png, encode_png};
+use crate::workspace::{MAX_READ_BYTES, authorize_command};
+use crate::{AuthorizedWorkspace, AutomationError, bad};
+
+/// Where file paths given to [`Headless`] may point.
+pub enum Filesystem {
+    /// No file access (an MCP server started without roots).
+    Denied,
+    /// Host paths as given: the local CLI user typed them.
+    TrustedLocal,
+    /// Relative paths under the authorized roots (remote or agent callers).
+    Workspace(AuthorizedWorkspace),
+}
+
+/// What [`Headless::render_png`] draws.
+#[derive(Clone, Debug, Default)]
+pub struct RenderOptions {
+    /// `3d` (default) or `2d` (a node's output; the 2D view's node by default).
+    pub view: Option<String>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    /// Camera overrides in degrees (the session's view is not changed).
+    pub yaw: Option<f32>,
+    pub pitch: Option<f32>,
+    /// 3D scene override (`rounded_cube`, `sphere`, …).
+    pub scene: Option<String>,
+    /// 2D: the node whose output to show.
+    pub node: Option<u64>,
+    /// 2D: the output port.
+    pub port: Option<usize>,
+    /// Cook at full size instead of the preview size.
+    pub full: bool,
+}
+
+/// A PNG render.
+pub struct Rendered {
+    pub width: u32,
+    pub height: u32,
+    pub png: Vec<u8>,
+}
+
+pub struct Headless {
+    pub session: Session,
+    fs: Filesystem,
+    scene: Option<(String, Scene)>,
+    light: Option<Lighting>,
+}
+
+impl Headless {
+    pub fn new(session: Session, fs: Filesystem) -> Headless {
+        Headless { session, fs, scene: None, light: None }
+    }
+
+    /// The session a fresh server starts with: the brick wall sample.
+    pub fn default_session() -> Session {
+        materialcraft_engine::sample_session()
+    }
+
+    fn trusted(&self) -> bool {
+        matches!(self.fs, Filesystem::TrustedLocal)
+    }
+
+    fn read(&self, path: &str) -> Result<Vec<u8>, AutomationError> {
+        match &self.fs {
+            Filesystem::Denied => Err(bad("file access is not granted: start the server with --read-root <dir>")),
+            Filesystem::TrustedLocal => {
+                let len = std::fs::metadata(path).map_err(|e| AutomationError::Io(format!("cannot read {path}: {e}")))?.len();
+                if len > MAX_READ_BYTES {
+                    return Err(bad(format!("{path} is {len} bytes (limit {MAX_READ_BYTES})")));
+                }
+                std::fs::read(path).map_err(|e| AutomationError::Io(format!("cannot read {path}: {e}")))
+            }
+            Filesystem::Workspace(w) => w.read(path),
+        }
+    }
+
+    fn write(&self, path: &str, bytes: &[u8]) -> Result<(), AutomationError> {
+        match &self.fs {
+            Filesystem::Denied => Err(bad("file access is not granted: start the server with --write-root <dir>")),
+            Filesystem::TrustedLocal => materialcraft_engine::formats::write_atomic(Path::new(path), bytes).map_err(|e| AutomationError::Io(e.to_string())),
+            Filesystem::Workspace(w) => w.write(path, bytes),
+        }
+    }
+
+    fn create_dir_all(&self, dir: &str) -> Result<(), AutomationError> {
+        match &self.fs {
+            _ if dir == "." => Ok(()),
+            Filesystem::Denied => Err(bad("file access is not granted: start the server with --write-root <dir>")),
+            Filesystem::TrustedLocal => std::fs::create_dir_all(dir).map_err(|e| AutomationError::Io(format!("cannot create {dir}: {e}"))),
+            Filesystem::Workspace(w) => w.create_dir_all(dir),
+        }
+    }
+
+    pub fn inspect(&mut self) -> Value {
+        self.session.cook_if_dirty();
+        inspect::session(&self.session, None)
+    }
+
+    pub fn command_list(&self, filter: Option<&str>) -> Value {
+        commands::list(&self.session, filter)
+    }
+
+    /// Run an engine command. Untrusted callers can't reach host paths through it.
+    pub fn command_run(&mut self, id: &str, params: Value) -> Result<Value, AutomationError> {
+        if !self.trusted() {
+            authorize_command(id, &params)?;
+        }
+        Ok(materialcraft_engine::execute(&mut self.session, id, &params)?)
+    }
+
+    /// Run `[{id, params?}]` in order, stopping at the first error (reported with its index).
+    pub fn batch(&mut self, steps: &[Value]) -> Value {
+        let mut results = Vec::new();
+        for (i, step) in steps.iter().enumerate() {
+            let id = step.get("id").and_then(Value::as_str).unwrap_or_default();
+            match self.command_run(id, step.get("params").cloned().unwrap_or(Value::Null)) {
+                Ok(v) => results.push(v),
+                Err(e) => return batch_reply(results, Some((i, id, e.to_string()))),
+            }
+        }
+        batch_reply(results, None)
+    }
+
+    /// Open a `.mcraft` package.
+    pub fn open(&mut self, path: &str) -> Result<Value, AutomationError> {
+        let bytes = self.read(path)?;
+        file_cmds::open_bytes(&mut self.session, &bytes, Some(path.to_string()))?;
+        Ok(self.inspect())
+    }
+
+    /// Save the package (`.mcraft` appended when missing) to `path` or its own file.
+    pub fn save(&mut self, path: Option<&str>) -> Result<Value, AutomationError> {
+        let path = match path {
+            Some(p) if p.to_ascii_lowercase().ends_with(".mcraft") => p.to_string(),
+            Some(p) => format!("{p}.mcraft"),
+            None => self.session.path.clone().ok_or_else(|| bad("the package has no file yet: give a `path`"))?,
+        };
+        let bytes = file_cmds::save_bytes(&self.session)?;
+        self.write(&path, &bytes)?;
+        self.session.path = Some(path.clone());
+        self.session.modified = false;
+        Ok(json!({"path": path, "bytes": bytes.len()}))
+    }
+
+    /// Embed an image file as a bitmap resource.
+    pub fn import_bitmap(&mut self, path: &str, name: Option<&str>) -> Result<Value, AutomationError> {
+        let bytes = self.read(path)?;
+        let file = Path::new(path).file_name().and_then(|f| f.to_str()).unwrap_or("bitmap.png").to_string();
+        let name = file_cmds::add_resource(&mut self.session, &file, bytes, name)?;
+        Ok(json!({"name": name}))
+    }
+
+    /// Export every output of a graph into folder `dir`.
+    pub fn export(&mut self, p: &Value) -> Result<Value, AutomationError> {
+        let dir = p.get("dir").and_then(Value::as_str).ok_or_else(|| bad("`dir` is required"))?;
+        let (gi, ext, pattern, depth) = file_cmds::export_params(&self.session, p)?;
+        let files = file_cmds::export_outputs(&self.session, gi, &ext, &pattern, depth)?;
+        self.create_dir_all(dir)?;
+        let mut written = Vec::new();
+        for f in files {
+            let path = if dir == "." { f.file.clone() } else { format!("{}/{}", dir.trim_end_matches('/'), f.file) };
+            self.write(&path, &f.bytes)?;
+            written.push(path);
+        }
+        Ok(json!({"files": written}))
+    }
+
+    /// Render the 3D view or a node's 2D output as PNG.
+    pub fn render_png(&mut self, o: &RenderOptions) -> Result<Rendered, AutomationError> {
+        let max = if self.trusted() { MAX_LOCAL_RENDER_SIDE } else { MAX_PNG_SIDE };
+        let saved = self.session.preview_size;
+        if o.full {
+            self.session.preview_size = None;
+            self.session.dirty = true;
+        }
+        self.session.cook_if_dirty();
+        let out = match o.view.as_deref().unwrap_or("3d") {
+            "2d" => self.render_2d(o, max),
+            "3d" => Ok(self.render_3d(o, max)),
+            other => Err(bad(format!("unknown view `{other}` (3d or 2d)"))),
+        };
+        if o.full {
+            self.session.preview_size = saved;
+            self.session.dirty = true;
+        }
+        let (w, h, rgba) = out?;
+        let png = encode_png(w, h, rgba)?;
+        check_png(png.len())?;
+        Ok(Rendered { width: w, height: h, png })
+    }
+
+    fn render_2d(&mut self, o: &RenderOptions, max: u32) -> Result<(u32, u32, Vec<u8>), AutomationError> {
+        let img = match o.node {
+            Some(n) => self.session.cooked.image(NodeId(n), o.port.unwrap_or(0)).ok_or_else(|| bad(format!("node {n} has no cooked output")))?,
+            None => self.session.view2d_image().map(|(_, i)| i).ok_or_else(|| bad("nothing to show: the graph has no outputs; pass `node`"))?,
+        };
+        let (w, h) = (o.width.unwrap_or(img.w).clamp(16, max), o.height.unwrap_or(img.h).clamp(16, max));
+        let img = img.resize(w, h, true);
+        Ok((w, h, img.to_rgba8_display()))
+    }
+
+    fn render_3d(&mut self, o: &RenderOptions, max: u32) -> (u32, u32, Vec<u8>) {
+        let v = &self.session.view3d;
+        let scene_id = o.scene.clone().unwrap_or_else(|| v.scene.clone());
+        if self.scene.as_ref().is_none_or(|(id, _)| *id != scene_id) {
+            self.scene = Some((scene_id.clone(), Scene::builtin(&scene_id)));
+        }
+        if self.light.as_ref().is_none_or(|l| l.name != v.environment) {
+            self.light = Some(Lighting::new(&v.environment));
+        }
+        let settings = Settings {
+            yaw: o.yaw.unwrap_or(v.yaw),
+            pitch: o.pitch.unwrap_or(v.pitch),
+            distance: v.distance,
+            tiling: v.tiling,
+            exposure: v.exposure,
+            env_rotation: v.env_rotation,
+            height_scale: v.height_scale,
+            show_env: false,
+            supersample: 2,
+        };
+        let (w, h) = (o.width.unwrap_or(1024).clamp(16, max), o.height.unwrap_or(768).clamp(16, max));
+        let maps = Maps::from_usages(self.session.material_maps());
+        let (Some((_, scene)), Some(light)) = (&self.scene, &self.light) else { return (w, h, vec![0; (w * h * 4) as usize]) };
+        (w, h, materialcraft_render::render(scene, &maps, light, &settings, w, h))
+    }
+}
+
+pub fn batch_reply(results: Vec<Value>, failed: Option<(usize, &str, String)>) -> Value {
+    json!({
+        "completed": results.len(),
+        "results": results,
+        "failed": failed.map(|(index, id, error)| json!({ "index": index, "id": id, "error": error })),
+    })
+}

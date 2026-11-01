@@ -210,7 +210,7 @@ impl Image {
         if w == self.w && h == self.h {
             return self.clone();
         }
-        if w <= self.w && h <= self.h && self.w % w == 0 && self.h % h == 0 {
+        if w <= self.w && h <= self.h && self.w.is_multiple_of(w) && self.h.is_multiple_of(h) {
             let (fx, fy) = ((self.w / w) as i64, (self.h / h) as i64);
             let inv = 1.0 / (fx * fy) as f32;
             return Image::generate(w, h, self.kind, |x, y| {

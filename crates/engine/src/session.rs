@@ -47,7 +47,7 @@ impl Default for View3d {
             environment: "studio".into(),
             env_rotation: 0.0,
             exposure: 0.0,
-            height_scale: 0.03,
+            height_scale: 0.012,
             show_axis: false,
             show_grid: false,
         }

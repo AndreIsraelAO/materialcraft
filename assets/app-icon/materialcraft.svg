@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- MaterialCraft placeholder icon: an engraved material sphere fed by a node. Original work,
+       CC0 (see ATTRIBUTION.md). Three colours: ink #0b0b0c, paper #efe9dc, MaterialCraft cyan #1ea7c4. -->
+  <defs>
+    <clipPath id="ball"><circle cx="290" cy="236" r="150"/></clipPath>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#1ea7c4"/>
+  <!-- wire from the node into the sphere -->
+  <path d="M 128 388 C 190 388, 170 300, 232 300" fill="none" stroke="#0b0b0c" stroke-width="22" stroke-linecap="round"/>
+  <path d="M 128 388 C 190 388, 170 300, 232 300" fill="none" stroke="#efe9dc" stroke-width="10" stroke-linecap="round"/>
+  <!-- node card -->
+  <rect x="58" y="338" width="100" height="100" rx="18" fill="#efe9dc" stroke="#0b0b0c" stroke-width="10"/>
+  <rect x="58" y="338" width="100" height="26" rx="12" fill="#0b0b0c"/>
+  <!-- sphere with engraved shading -->
+  <circle cx="290" cy="236" r="150" fill="#efe9dc"/>
+  <g clip-path="url(#ball)" stroke="#0b0b0c" stroke-width="7" fill="none" stroke-linecap="round">
+    <path d="M 200 386 A 170 170 0 0 0 440 250"/>
+    <path d="M 222 396 A 150 150 0 0 0 446 290"/>
+    <path d="M 250 404 A 130 130 0 0 0 448 326"/>
+    <path d="M 284 408 A 110 110 0 0 0 446 360"/>
+  </g>
+  <circle cx="290" cy="236" r="150" fill="none" stroke="#0b0b0c" stroke-width="12"/>
+  <ellipse cx="238" cy="176" rx="34" ry="22" fill="#ffffff" transform="rotate(-30 238 176)"/>
+</svg>
