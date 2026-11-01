@@ -226,20 +226,6 @@ fn draw_histogram(st: &mut View2dState, p: &egui::Painter, rect: Rect, key: u64,
     }
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn histogram_counts_every_pixel_once_per_channel() {
-        let px = [0, 128, 255, 255, 255, 128, 0, 255];
-        let h = super::histogram(&px, 3);
-        assert_eq!(h.len(), 3);
-        assert!(h.iter().all(|b| b.iter().sum::<u32>() == 2));
-        assert_eq!(h[0][0], 1);
-        assert_eq!(h[0][super::BINS - 1], 1);
-        assert_eq!(h[1][32], 2);
-    }
-}
-
 #[cfg(not(target_arch = "wasm32"))]
 fn save_image(app: &mut MaterialCraftApp) {
     let Some((id, img)) = app.session.view2d_image().map(|(id, i)| (id, i.clone())) else { return };
@@ -259,5 +245,19 @@ fn save_image(app: &mut MaterialCraftApp) {
     match result {
         Ok(()) => app.toast(format!("{} {}", tr("Saved"), path.display()), false),
         Err(e) => app.toast(e.to_string(), true),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn histogram_counts_every_pixel_once_per_channel() {
+        let px = [0, 128, 255, 255, 255, 128, 0, 255];
+        let h = super::histogram(&px, 3);
+        assert_eq!(h.len(), 3);
+        assert!(h.iter().all(|b| b.iter().sum::<u32>() == 2));
+        assert_eq!(h[0][0], 1);
+        assert_eq!(h[0][super::BINS - 1], 1);
+        assert_eq!(h[1][32], 2);
     }
 }
