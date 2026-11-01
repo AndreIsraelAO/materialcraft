@@ -69,6 +69,8 @@ egui = "0.37"
 wgpu = "30"
 rfd = "0.17"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+gltf = { version = "1.4", default-features = false, features = ["import", "utils"] }
+tobj = { version = "4", default-features = false }
 mikktspace = { version = "0.3", default-features = false, features = ["glam"] }
 rmcp = { version = "3.5", default-features = false, features = ["server", "macros", "transport-io"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "sync", "net", "io-util", "time"] }

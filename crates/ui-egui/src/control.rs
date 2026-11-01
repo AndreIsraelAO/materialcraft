@@ -54,16 +54,8 @@ pub fn poll(app: &mut MaterialCraftApp, ctx: &egui::Context) {
     let reqs: Vec<ControlRequest> = rx.try_iter().collect();
     for r in reqs {
         if r.method == "ui.screenshot" {
-            let reply = r.reply;
-            let repaint = ctx.clone();
-            let callback = egui::ScreenshotCallback::new(move |img| {
-                let answer = encode_png(img.size[0] as u32, img.size[1] as u32, img.pixels.iter().flat_map(|c| c.to_array()).collect())
-                    .map(|(w, h, png)| ok(json!({ "width": w, "height": h, "png": base64::engine::general_purpose::STANDARD.encode(png) })))
-                    .unwrap_or_else(|| err("could not encode the screenshot"));
-                let _ = reply.send(answer);
-                repaint.request_repaint();
-            });
-            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(callback));
+            // Captured from the UI pass (`request_screenshots`), where viewport commands land.
+            app.pending_screenshots.push(r.reply);
             ctx.request_repaint();
             continue;
         }
@@ -71,6 +63,27 @@ pub fn poll(app: &mut MaterialCraftApp, ctx: &egui::Context) {
         let _ = r.reply.send(reply);
         ctx.request_repaint();
     }
+}
+
+/// Ask for one window capture answering every pending `ui.screenshot` (call from the UI pass).
+pub fn request_screenshots(app: &mut MaterialCraftApp, ctx: &egui::Context) {
+    if app.pending_screenshots.is_empty() {
+        return;
+    }
+    let replies = std::mem::take(&mut app.pending_screenshots);
+    let repaint = ctx.clone();
+    let callback = egui::ScreenshotCallback::new(move |img| {
+        let answer = encode_png(img.size[0] as u32, img.size[1] as u32, img.pixels.iter().flat_map(|c| c.to_array()).collect())
+            .map(|(w, h, png)| ok(json!({ "width": w, "height": h, "png": base64::engine::general_purpose::STANDARD.encode(png) })))
+            .unwrap_or_else(|| err("could not encode the screenshot"));
+        for r in &replies {
+            let _ = r.send(answer.clone());
+        }
+        repaint.request_repaint();
+    });
+    ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(callback));
+    ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaintWhileHidden);
+    ctx.request_repaint();
 }
 
 pub(crate) fn encode_png(w: u32, h: u32, rgba: Vec<u8>) -> Option<(u32, u32, Vec<u8>)> {

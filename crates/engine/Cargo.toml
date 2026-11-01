@@ -14,6 +14,7 @@ materialcraft-image = { workspace = true }
 materialcraft-nodes = { workspace = true }
 materialcraft-eval = { workspace = true }
 materialcraft-formats = { workspace = true }
+materialcraft-geom = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -2,10 +2,13 @@
 //!
 //! File formats, L2: the native `.mcraft` package (a zip holding `package.json` and the embedded
 //! `resources/`), bitmap decoding for Bitmap nodes, and texture export (PNG 8/16, JPEG, TGA,
-//! TIFF 8/16, BMP, WEBP, EXR 32F, HDR) with the output naming pattern. Byte-based APIs work
+//! TIFF 8/16, BMP, WEBP, EXR 32F, HDR) with the output naming pattern, and meshes for the 3D view
+//! (OBJ, glTF/GLB). Byte-based APIs work
 //! everywhere, including the browser; path helpers are native only.
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+
+pub mod mesh;
 
 use std::io::{Cursor, Read, Write};
 use std::sync::Arc;

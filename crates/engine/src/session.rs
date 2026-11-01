@@ -101,6 +101,8 @@ pub struct Session {
     pub dirty: bool,
     /// Cooked node outputs, shared with background cooks.
     pub cache: Arc<Mutex<Cache>>,
+    /// A mesh loaded for the 3D view (`scene: "custom"`): its file name and geometry.
+    pub custom_mesh: Option<(String, Arc<materialcraft_geom::Mesh>)>,
     undo: Vec<Snapshot>,
     redo: Vec<Snapshot>,
     /// Edits with the same key coalesce into one undo step (slider drags).
@@ -124,6 +126,7 @@ impl Session {
             cooked: Cooked::default(),
             dirty: true,
             cache: Arc::new(Mutex::new(Cache::default())),
+            custom_mesh: None,
             undo: Vec::new(),
             redo: Vec::new(),
             merge_key: None,
@@ -303,6 +306,14 @@ impl Session {
     pub fn material_maps(&self) -> Vec<(&'static str, &Image)> {
         let Ok(g) = self.graph() else { return Vec::new() };
         materialcraft_eval::outputs(g, &self.cooked).into_iter().filter_map(|(_, usage, _, img)| Some((usage, img?))).collect()
+    }
+
+    /// Show a mesh file in the 3D view (OBJ, glTF, GLB).
+    pub fn load_mesh_bytes(&mut self, name: &str, bytes: &[u8]) -> Result<()> {
+        let mesh = materialcraft_formats::mesh::load_mesh(name, bytes)?;
+        self.custom_mesh = Some((name.to_string(), Arc::new(mesh)));
+        self.view3d.scene = "custom".into();
+        Ok(())
     }
 
     pub fn log(&mut self, msg: impl Into<String>) {

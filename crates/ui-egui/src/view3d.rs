@@ -27,6 +27,11 @@ pub struct View3dState {
 
 pub fn scene_label(app: &MaterialCraftApp) -> String {
     let id = &app.session.view3d.scene;
+    if id == "custom"
+        && let Some((name, _)) = &app.session.custom_mesh
+    {
+        return name.clone();
+    }
     SCENES.iter().find(|(s, _)| s == id).map_or(id.as_str(), |(_, l)| l).to_string()
 }
 
@@ -40,6 +45,15 @@ fn menus(app: &mut MaterialCraftApp, ui: &mut Ui) {
                         app.run("view.3d", json!({"scene": id}));
                         ui.close();
                     }
+                }
+                ui.separator();
+                if ui.button(tr("Load mesh...")).clicked() {
+                    crate::web_files::load_mesh(app, ui.ctx());
+                    ui.close();
+                }
+                if app.session.custom_mesh.is_some() && ui.selectable_label(app.session.view3d.scene == "custom", scene_label_custom(app)).clicked() {
+                    app.run("view.3d", json!({"scene": "custom"}));
+                    ui.close();
                 }
                 ui.separator();
                 if ui.button(tr("Reset scene")).clicked() {
@@ -162,11 +176,15 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
     });
 }
 
+fn scene_label_custom(app: &MaterialCraftApp) -> String {
+    app.session.custom_mesh.as_ref().map_or_else(String::new, |(n, _)| n.clone())
+}
+
 fn content_key(app: &MaterialCraftApp, w: u32, h: u32, show_env: bool) -> u64 {
     use std::hash::{DefaultHasher, Hash, Hasher};
     let mut hs = DefaultHasher::new();
     let v = &app.session.view3d;
-    (w, h, show_env, &v.scene, &v.environment).hash(&mut hs);
+    (w, h, show_env, &v.scene, &v.environment, app.session.custom_mesh.as_ref().map(|(n, _)| n)).hash(&mut hs);
     for f in [v.yaw, v.pitch, v.distance, v.tiling, v.exposure, v.env_rotation, v.height_scale] {
         f.to_bits().hash(&mut hs);
     }
@@ -188,8 +206,16 @@ fn render(app: &mut MaterialCraftApp, ctx: &egui::Context, rect: Rect, moving: b
         return;
     }
     let v = app.session.view3d.clone();
-    if app.view3d.scene.as_ref().is_none_or(|(id, _)| *id != v.scene) {
-        app.view3d.scene = Some((v.scene.clone(), Scene::builtin(&v.scene)));
+    let scene_key = match (&*v.scene, &app.session.custom_mesh) {
+        ("custom", Some((name, _))) => format!("custom:{name}"),
+        _ => v.scene.clone(),
+    };
+    if app.view3d.scene.as_ref().is_none_or(|(id, _)| *id != scene_key) {
+        let scene = match (&*v.scene, &app.session.custom_mesh) {
+            ("custom", Some((_, mesh))) => Scene::new((**mesh).clone()),
+            _ => Scene::builtin(&v.scene),
+        };
+        app.view3d.scene = Some((scene_key, scene));
     }
     if app.view3d.light.as_ref().is_none_or(|l| l.name != v.environment) {
         app.view3d.light = Some(Lighting::new(&v.environment));

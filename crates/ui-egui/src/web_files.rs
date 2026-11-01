@@ -13,6 +13,7 @@ use crate::i18n::tr;
 enum Pick {
     Package,
     Bitmap,
+    Mesh,
 }
 
 /// Files picked in the browser, waiting for the next frame: (file name, bytes, purpose).
@@ -22,13 +23,45 @@ static INBOX: Mutex<Vec<(String, Vec<u8>, Pick)>> = Mutex::new(Vec::new());
 pub fn poll(app: &mut MaterialCraftApp) {
     let picked = std::mem::take(&mut *INBOX.lock().unwrap_or_else(PoisonError::into_inner));
     for (name, bytes, pick) in picked {
-        load(app, &name, bytes, pick == Pick::Bitmap);
+        if pick == Pick::Mesh {
+            mesh(app, &name, &bytes);
+        } else {
+            load(app, &name, bytes, pick == Pick::Bitmap);
+        }
+    }
+}
+
+/// Show a mesh file's bytes in the 3D view.
+fn mesh(app: &mut MaterialCraftApp, name: &str, bytes: &[u8]) {
+    match app.session.load_mesh_bytes(name, bytes) {
+        Ok(()) => app.toast(format!("{} {name}", tr("Showing")), false),
+        Err(e) => app.toast(format!("{} {name}: {e}", tr("Couldn't load")), true),
+    }
+}
+
+/// 3D view ▸ Scene ▸ Load mesh: a native dialog on the desktop, the file picker in the browser.
+pub fn load_mesh(app: &mut MaterialCraftApp, ctx: &egui::Context) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = ctx;
+        if let Some(p) = rfd::FileDialog::new().add_filter("Meshes", materialcraft_engine::formats::mesh::MESH_EXTENSIONS).pick_file() {
+            app.run("view.3d.loadMesh", serde_json::json!({"path": p.display().to_string()}));
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = app;
+        web::pick_mesh(ctx);
     }
 }
 
 /// Open a package or import an image (by extension unless `bitmap` forces an image).
 pub fn load(app: &mut MaterialCraftApp, name: &str, bytes: Vec<u8>, bitmap: bool) {
     let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+    if materialcraft_engine::formats::mesh::MESH_EXTENSIONS.contains(&ext.as_str()) {
+        mesh(app, name, &bytes);
+        return;
+    }
     if bitmap || materialcraft_engine::formats::IMAGE_EXTENSIONS.contains(&ext.as_str()) {
         match materialcraft_engine::file_cmds::add_resource(&mut app.session, name, bytes, None) {
             Ok(res) => {
@@ -128,6 +161,11 @@ mod web {
     /// File ▸ Open: a package, picked in the browser.
     pub fn open(ctx: &egui::Context) {
         pick(ctx, "MaterialCraft package", &["mcraft"], Pick::Package);
+    }
+
+    /// 3D view ▸ Scene ▸ Load mesh.
+    pub fn pick_mesh(ctx: &egui::Context) {
+        pick(ctx, "Meshes", materialcraft_engine::formats::mesh::MESH_EXTENSIONS, Pick::Mesh);
     }
 
     /// File ▸ Import bitmap.

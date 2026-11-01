@@ -33,6 +33,7 @@ pub(crate) fn specs() -> Vec<CommandSpec> {
             always,
             view3d
         ),
+        cmd!("view.3d.loadMesh", "Load mesh...", [], None, "{path} shows an OBJ, glTF or GLB mesh in the 3D view (scene \"custom\")", always, load_mesh),
         cmd!("view.3d.reset", "Reset scene", [], None, "{}", always, |s, _| {
             s.view3d = crate::View3d::default();
             Ok(J::Null)
@@ -81,13 +82,17 @@ fn view2d(s: &mut Session, p: &J) -> Result<J> {
 }
 
 fn view3d(s: &mut Session, p: &J) -> Result<J> {
-    let v = &mut s.view3d;
     if let Some(sc) = strp(p, "scene") {
-        if !SCENES.iter().any(|(id, _)| *id == sc) {
+        if sc == "custom" && s.custom_mesh.is_none() {
+            return Err(bad("view.3d", "no mesh is loaded: use view.3d.loadMesh"));
+        }
+        let v = &mut s.view3d;
+        if sc != "custom" && !SCENES.iter().any(|(id, _)| *id == sc) {
             return Err(bad("view.3d", format!("unknown scene `{sc}`")));
         }
         v.scene = sc.into();
     }
+    let v = &mut s.view3d;
     if let Some(e) = strp(p, "environment") {
         if !ENVIRONMENTS.iter().any(|(id, _)| *id == e) {
             return Err(bad("view.3d", format!("unknown environment `{e}`")));
@@ -122,6 +127,21 @@ fn view3d(s: &mut Session, p: &J) -> Result<J> {
         v.show_grid = b;
     }
     Ok(serde_json::to_value(&s.view3d).unwrap_or(J::Null))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn load_mesh(s: &mut Session, p: &J) -> Result<J> {
+    let path = strp(p, "path").ok_or_else(|| bad("view.3d.loadMesh", "`path` is required"))?;
+    let bytes = std::fs::read(path).map_err(|e| bad("view.3d.loadMesh", format!("{path}: {e}")))?;
+    let name = std::path::Path::new(path).file_name().and_then(|n| n.to_str()).unwrap_or(path).to_string();
+    s.load_mesh_bytes(&name, &bytes)?;
+    let tris = s.custom_mesh.as_ref().map_or(0, |(_, m)| m.triangle_count());
+    Ok(json!({"name": name, "triangles": tris}))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn load_mesh(_: &mut Session, _: &J) -> Result<J> {
+    Err(bad("view.3d.loadMesh", "the browser loads meshes with the file picker"))
 }
 
 fn preview_size(s: &mut Session, p: &J) -> Result<J> {

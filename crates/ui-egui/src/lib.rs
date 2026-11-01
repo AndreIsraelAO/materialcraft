@@ -58,6 +58,8 @@ pub struct MaterialCraftApp {
     pub fn_editor: Option<function_editor::FnEditor>,
     /// Synthetic input from the control channel, fed to egui on the next frames.
     pub input_queue: VecDeque<control::Scripted>,
+    /// Replies waiting for the next window capture (`ui.screenshot`).
+    pub pending_screenshots: Vec<std::sync::mpsc::Sender<Value>>,
     pub fps: f32,
     /// Smoothed CPU time spent building the UI per frame (ms).
     pub ui_ms: f32,
@@ -99,6 +101,7 @@ impl MaterialCraftApp {
             view2d: view2d::View2dState::default(),
             fn_editor: None,
             input_queue: VecDeque::new(),
+            pending_screenshots: Vec::new(),
             fps: 0.0,
             ui_ms: 0.0,
             status: String::new(),
@@ -245,6 +248,7 @@ impl MaterialCraftApp {
         windows::show(self, &ctx);
         function_editor::show(self, &ctx);
         toasts(self, &ctx);
+        control::request_screenshots(self, &ctx);
         let dt = (now_ms() - t0) as f32;
         self.ui_ms = if self.ui_ms == 0.0 { dt } else { self.ui_ms * 0.9 + dt * 0.1 };
     }

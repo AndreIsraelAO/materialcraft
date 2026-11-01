@@ -212,8 +212,14 @@ impl Headless {
     fn render_3d(&mut self, o: &RenderOptions, max: u32) -> (u32, u32, Vec<u8>) {
         let v = &self.session.view3d;
         let scene_id = o.scene.clone().unwrap_or_else(|| v.scene.clone());
-        if self.scene.as_ref().is_none_or(|(id, _)| *id != scene_id) {
-            self.scene = Some((scene_id.clone(), Scene::builtin(&scene_id)));
+        let custom = self.session.custom_mesh.clone().filter(|_| scene_id == "custom");
+        let key = custom.as_ref().map_or_else(|| scene_id.clone(), |(n, _)| format!("custom:{n}"));
+        if self.scene.as_ref().is_none_or(|(id, _)| *id != key) {
+            let scene = match custom {
+                Some((_, mesh)) => Scene::new((*mesh).clone()),
+                None => Scene::builtin(&scene_id),
+            };
+            self.scene = Some((key, scene));
         }
         if self.light.as_ref().is_none_or(|l| l.name != v.environment) {
             self.light = Some(Lighting::new(&v.environment));
