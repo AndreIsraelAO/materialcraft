@@ -220,10 +220,12 @@ impl Value {
             }
         };
         // A typed value as the API writes it ({"t": .., "v": ..}).
-        if let Ok(v) = serde_json::from_value::<Value>(j.clone())
-            && v.type_name() == self.type_name()
-        {
-            return Some(v);
+        if let Ok(v) = serde_json::from_value::<Value>(j.clone()) {
+            if v.type_name() == self.type_name() {
+                return Some(v);
+            }
+            // Another type (a float input bound to an int parameter): coerce its payload.
+            return j.get("v").and_then(|p| self.coerce_json(p));
         }
         Some(match self {
             Value::Float(_) => Value::Float(f(j)?),
@@ -329,6 +331,9 @@ mod tests {
         assert_eq!(Value::Float2([0.0; 2]).coerce_json(&serde_json::json!([1, 2])), Some(Value::Float2([1.0, 2.0])));
         assert_eq!(Value::Float(0.0).coerce_json(&serde_json::json!("x")), None);
         assert_eq!(Value::Float(0.0).coerce_json(&serde_json::json!(f64::MAX)), None);
+        // A typed value of another type converts through its payload.
+        assert_eq!(Value::Int(0).coerce_json(&serde_json::json!({"t": "float", "v": 8.6})), Some(Value::Int(9)));
+        assert_eq!(Value::Int(0).coerce_json(&serde_json::json!({"t": "text", "v": "x"})), None);
     }
 
     #[test]

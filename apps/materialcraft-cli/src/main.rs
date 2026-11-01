@@ -27,12 +27,13 @@ USAGE:
   materialcraft-cli new <template> <out.mcraft> [--size <px>] [--name <name>]
       A new package with one graph from a template (empty, pbr, bricks, stone_tiles, wood,
       rusty_metal, fabric, ground).
-  materialcraft-cli cook <input> [--graph <index>] [--full]
+  materialcraft-cli cook <input> [--graph <index>] [--set <input>=<value>]... [--full]
       Cook a graph and print per-node timings and errors.
-  materialcraft-cli export <input> <dir> [--graph <index>] [--format <ext>] [--depth 8|16|32] [--pattern <p>]
+  materialcraft-cli export <input> <dir> [--graph <index>] [--set <input>=<value>]... [--format <ext>]
+                   [--depth 8|16|32] [--pattern <p>]
       Cook at full size and write every output (png, jpg, tga, tif, bmp, webp, exr, hdr).
   materialcraft-cli render <input> <out.png> [--size <W>x<H>] [--view 3d|2d] [--scene <id>] [--node <id>]
-                   [--yaw <deg>] [--pitch <deg>] [--graph <index>] [--full]
+                   [--yaw <deg>] [--pitch <deg>] [--graph <index>] [--set <input>=<value>]... [--full]
       Render the material on a 3D scene (rounded_cube, cube, sphere, cylinder, plane, torus,
       material_ball), or one node's output (--view 2d), to PNG. No GPU needed.
   materialcraft-cli mcp [--bridge <port>] [--token <token>] [--read-root <dir>] [--write-root <dir>]
@@ -41,7 +42,8 @@ USAGE:
   materialcraft-cli serve [--port <port>] [--read-root <dir>] [--write-root <dir>]
       JSON lines ({\"id\",\"method\",\"params\"}) on stdio, or on 127.0.0.1:<port> with a token.
 
-<input> is a .mcraft package or `sample` (the built-in brick wall). See docs/control-protocol.md.
+<input> is a .mcraft package or `sample` (the built-in brick wall). --set gives a graph input a value
+(JSON, e.g. `--set roughness=0.4 --set tint=\"#aa7744\"`) before cooking. See docs/control-protocol.md.
 ";
 
 /// (name, flags taking a value, bare flags)
@@ -52,9 +54,9 @@ const SUBCOMMANDS: &[(&str, &[&str], &[&str])] = &[
     ("run", &["-o"], &[]),
     ("batch", &[], &[]),
     ("new", &["--size", "--name"], &[]),
-    ("cook", &["--graph"], &["--full"]),
-    ("export", &["--graph", "--format", "--depth", "--pattern"], &[]),
-    ("render", &["--size", "--view", "--scene", "--node", "--yaw", "--pitch", "--graph"], &["--full"]),
+    ("cook", &["--graph", "--set"], &["--full"]),
+    ("export", &["--graph", "--set", "--format", "--depth", "--pattern"], &[]),
+    ("render", &["--size", "--view", "--scene", "--node", "--yaw", "--pitch", "--graph", "--set"], &["--full"]),
     ("mcp", &["--bridge", "--token", "--read-root", "--write-root"], &[]),
     ("serve", &["--port", "--read-root", "--write-root"], &[]),
 ];
@@ -122,9 +124,15 @@ fn print(v: &Value) {
     println!("{}", serde_json::to_string_pretty(v).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")));
 }
 
+/// Open `--graph` and apply every `--set <input>=<value>` (the value is JSON, else a string).
 fn select_graph(h: &mut Headless, a: &Args) -> Result<(), String> {
     if let Some(g) = a.num::<u64>("--graph")? {
         h.command_run("graph.open", json!({"graph": g})).map_err(|e| e.to_string())?;
+    }
+    for (_, v) in a.flags.iter().filter(|(f, _)| f == "--set") {
+        let (id, value) = v.as_deref().and_then(|v| v.split_once('=')).ok_or("--set is <input>=<value>")?;
+        let value = serde_json::from_str(value).unwrap_or_else(|_| Value::String(value.into()));
+        h.command_run("graph.exposed.set", json!({"id": id, "value": value})).map_err(|e| format!("--set {id}: {e}"))?;
     }
     Ok(())
 }
@@ -215,6 +223,7 @@ fn run(cmd: &str, a: &Args) -> Result<(), String> {
         }
         "export" => {
             let mut h = open(a.pos(0, "<input>")?)?;
+            select_graph(&mut h, a)?;
             let dir = a.pos(1, "<dir>")?;
             let p = json!({"dir": dir, "graph": a.num::<u64>("--graph")?, "format": a.get("--format"), "depth": a.num::<u64>("--depth")?, "pattern": a.get("--pattern")});
             print(&h.export(&p).map_err(|e| e.to_string())?);
