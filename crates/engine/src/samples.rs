@@ -156,29 +156,41 @@ fn stone_tiles(b: &mut B) {
         "tile_generator",
         0.0,
         0.0,
-        &[("pattern", e(7)), ("x_amount", i(5)), ("y_amount", i(5)), ("scale", f(0.96)), ("offset", f(0.5)), ("lum_random", f(0.25))],
+        &[("pattern", e(7)), ("x_amount", i(6)), ("y_amount", i(6)), ("scale", f(0.95)), ("offset", f(0.5)), ("lum_random", f(0.3))],
     );
-    let clouds = b.n("clouds_2", 0.0, 180.0, &[("scale", f(6.0))]);
-    let detail = b.n("blend", 200.0, 80.0, &[("mode", e(3)), ("opacity", f(0.5))]);
+    let clouds = b.n("clouds_2", 0.0, 180.0, &[("scale", f(8.0))]);
+    let grunge = b.n("grunge_map_1", 0.0, 360.0, &[("scale", f(5.0))]);
+    let detail = b.n("blend", 200.0, 80.0, &[("mode", e(3)), ("opacity", f(0.35))]);
     b.c(clouds, detail, "foreground");
     b.c(tiles, detail, "background");
-    let normal = b.n("normal", 420.0, 0.0, &[("intensity", f(1.8))]);
-    b.c(detail, normal, "input");
-    let ao = b.n("ambient_occlusion", 420.0, 120.0, &[]);
-    b.c(detail, ao, "height");
-    let cmap = b.n("gradient_map", 420.0, 240.0, &[("gradient", grad(&[(0.0, [0.12, 0.12, 0.11]), (0.6, [0.45, 0.43, 0.40]), (1.0, [0.70, 0.68, 0.62])]))]);
-    b.c(detail, cmap, "input");
-    let rough = b.n("invert", 420.0, 360.0, &[]);
-    b.c(clouds, rough, "input");
-    let metal = b.n("uniform", 420.0, 480.0, &[("mode", e(1)), ("color", col(0.0, 0.0, 0.0))]);
+    // Chipped edges: blur the tiles down the grunge's slopes.
+    let worn = b.n("slope_blur", 380.0, 80.0, &[("intensity", f(1.0)), ("mode", e(1))]);
+    b.c(detail, worn, "input");
+    b.c(grunge, worn, "slope");
+    let normal = b.n("normal", 560.0, 0.0, &[("intensity", f(1.4))]);
+    b.c(worn, normal, "input");
+    let ao = b.n("ambient_occlusion", 560.0, 120.0, &[("spread", f(0.06)), ("intensity", f(0.5))]);
+    b.c(worn, ao, "height");
+    let stone = b.n("gradient_map", 560.0, 240.0, &[("gradient", grad(&[(0.0, [0.05, 0.045, 0.04]), (0.5, [0.16, 0.14, 0.11]), (1.0, [0.30, 0.27, 0.22])]))]);
+    b.c(worn, stone, "input");
+    let grout = b.n("uniform", 560.0, 360.0, &[("color", col(0.06, 0.055, 0.05))]);
+    let mask = b.n("histogram_scan", 560.0, 480.0, &[("position", f(0.9)), ("contrast", f(0.9))]);
+    b.c(tiles, mask, "input");
+    let base = b.n("blend", 740.0, 300.0, &[]);
+    b.c(stone, base, "foreground");
+    b.c(grout, base, "background");
+    b.c(mask, base, "mask");
+    let rough = b.n("levels", 740.0, 440.0, &[("out_low", f(0.55)), ("out_high", f(0.9))]);
+    b.c(grunge, rough, "input");
+    let metal = b.n("uniform", 740.0, 560.0, &[("mode", e(1)), ("color", col(0.0, 0.0, 0.0))]);
     b.outputs(
-        700.0,
+        960.0,
         &[
-            (cmap, "output", 0, "basecolor"),
+            (base, "output", 0, "basecolor"),
             (normal, "output", 1, "normal"),
             (rough, "output", 2, "roughness"),
             (metal, "output", 3, "metallic"),
-            (detail, "output", 4, "height"),
+            (worn, "output", 4, "height"),
             (ao, "output", 5, "ambientocclusion"),
         ],
     );
@@ -225,25 +237,26 @@ fn wood(b: &mut B) {
 
 fn rusty_metal(b: &mut B) {
     let rust_mask = b.n("grunge_map_1", 0.0, 0.0, &[("scale", f(3.0)), ("contrast", f(0.7))]);
-    let scan = b.n("histogram_scan", 200.0, 0.0, &[("position", f(0.55)), ("contrast", f(0.7))]);
+    let scan = b.n("histogram_scan", 200.0, 0.0, &[("position", f(0.4)), ("contrast", f(0.8))]);
     b.c(rust_mask, scan, "input");
     let fine = b.n("clouds_3", 0.0, 180.0, &[("scale", f(12.0))]);
     let brushed = b.n("anisotropic_noise", 0.0, 360.0, &[("scale", f(2.0)), ("scale_y", f(256.0))]);
-    let h = b.n("blend", 400.0, 90.0, &[("mode", e(1)), ("opacity", f(0.4))]);
+    let h = b.n("blend", 400.0, 90.0, &[("mode", e(3)), ("opacity", f(0.35))]);
     b.c(fine, h, "foreground");
     b.c(scan, h, "background");
-    let normal = b.n("normal", 600.0, 0.0, &[("intensity", f(1.4))]);
+    let normal = b.n("normal", 600.0, 0.0, &[("intensity", f(1.0))]);
     b.c(h, normal, "input");
-    let rust_col = b.n("gradient_map", 400.0, 240.0, &[("gradient", grad(&[(0.0, [0.12, 0.04, 0.01]), (0.5, [0.38, 0.12, 0.03]), (1.0, [0.55, 0.25, 0.08])]))]);
+    let rust_col =
+        b.n("gradient_map", 400.0, 240.0, &[("gradient", grad(&[(0.0, [0.03, 0.01, 0.004]), (0.5, [0.11, 0.035, 0.01]), (1.0, [0.22, 0.08, 0.02])]))]);
     b.c(fine, rust_col, "input");
-    let metal_col = b.n("uniform", 400.0, 380.0, &[("color", col(0.55, 0.56, 0.58))]);
+    let metal_col = b.n("uniform", 400.0, 380.0, &[("color", col(0.52, 0.53, 0.55))]);
     let base = b.n("blend", 600.0, 300.0, &[]);
     b.c(rust_col, base, "foreground");
     b.c(metal_col, base, "background");
     b.c(scan, base, "mask");
     let metal = b.n("invert", 600.0, 440.0, &[]);
     b.c(scan, metal, "input");
-    let rough_metal = b.n("levels", 400.0, 520.0, &[("out_low", f(0.25)), ("out_high", f(0.4))]);
+    let rough_metal = b.n("levels", 400.0, 520.0, &[("out_low", f(0.32)), ("out_high", f(0.48))]);
     b.c(brushed, rough_metal, "input");
     let rough = b.n("blend", 600.0, 560.0, &[]);
     let rough_rust = b.n("uniform", 400.0, 640.0, &[("mode", e(1)), ("color", col(0.85, 0.85, 0.85))]);
@@ -295,32 +308,40 @@ fn fabric(b: &mut B) {
 }
 
 fn ground(b: &mut B) {
-    let stones = b.n("cells_4", 0.0, 0.0, &[("scale", f(6.0))]);
-    let pebbles = b.n("cells_1", 0.0, 180.0, &[("scale", f(18.0))]);
-    let dirt = b.n("dirt", 0.0, 360.0, &[("scale", f(5.0))]);
-    let h1 = b.n("height_blend", 220.0, 90.0, &[("offset", f(0.45)), ("contrast", f(0.85))]);
-    b.c(stones, h1, "top");
-    b.c(pebbles, h1, "bottom");
-    let h = b.n("blend", 420.0, 160.0, &[("mode", e(6)), ("opacity", f(0.8))]);
-    b.c(dirt, h, "foreground");
-    b.cp(h1, "height", h, "background");
-    let normal = b.n("normal", 620.0, 0.0, &[("intensity", f(2.0))]);
-    b.c(h, normal, "input");
-    let ao = b.n("ambient_occlusion", 620.0, 120.0, &[]);
-    b.c(h, ao, "height");
-    let cmap = b.n("gradient_map", 620.0, 240.0, &[("gradient", grad(&[(0.0, [0.08, 0.06, 0.04]), (0.5, [0.27, 0.22, 0.17]), (1.0, [0.55, 0.52, 0.47])]))]);
-    b.c(h, cmap, "input");
-    let rough = b.n("levels", 620.0, 360.0, &[("out_low", f(0.6)), ("out_high", f(0.95))]);
-    b.c(dirt, rough, "input");
-    let metal = b.n("uniform", 620.0, 480.0, &[("mode", e(1)), ("color", col(0.0, 0.0, 0.0))]);
+    let stones = b.n("stones", 0.0, 0.0, &[("scale", f(5.0)), ("gap", f(0.12)), ("height_random", f(0.5))]);
+    let dirt = b.n("dirt", 0.0, 180.0, &[("scale", f(5.0))]);
+    let clouds = b.n("clouds_2", 0.0, 360.0, &[("scale", f(10.0))]);
+    let h = b.n("height_blend", 220.0, 90.0, &[("offset", f(0.3)), ("contrast", f(0.85))]);
+    b.c(stones, h, "top");
+    b.c(dirt, h, "bottom");
+    let normal = b.n("normal", 440.0, 0.0, &[("intensity", f(1.6))]);
+    b.cp(h, "height", normal, "input");
+    let ao = b.n("ambient_occlusion", 440.0, 120.0, &[("spread", f(0.08))]);
+    b.cp(h, "height", ao, "height");
+    // Stones: grey with cloudy variation; dirt: brown, joined by the blend's mask.
+    let stone_h = b.n("blend", 220.0, 300.0, &[("mode", e(3)), ("opacity", f(0.5))]);
+    b.c(clouds, stone_h, "foreground");
+    b.c(stones, stone_h, "background");
+    let stone_col =
+        b.n("gradient_map", 440.0, 240.0, &[("gradient", grad(&[(0.0, [0.06, 0.055, 0.05]), (0.6, [0.17, 0.16, 0.14]), (1.0, [0.30, 0.28, 0.25])]))]);
+    b.c(stone_h, stone_col, "input");
+    let dirt_col = b.n("gradient_map", 440.0, 360.0, &[("gradient", grad(&[(0.0, [0.03, 0.02, 0.012]), (1.0, [0.12, 0.08, 0.05])]))]);
+    b.c(dirt, dirt_col, "input");
+    let base = b.n("blend", 660.0, 300.0, &[]);
+    b.c(dirt_col, base, "foreground");
+    b.c(stone_col, base, "background");
+    b.cp(h, "blend_mask", base, "mask");
+    let rough = b.n("levels", 660.0, 440.0, &[("out_low", f(0.7)), ("out_high", f(0.95))]);
+    b.c(clouds, rough, "input");
+    let metal = b.n("uniform", 660.0, 560.0, &[("mode", e(1)), ("color", col(0.0, 0.0, 0.0))]);
     b.outputs(
         880.0,
         &[
-            (cmap, "output", 0, "basecolor"),
+            (base, "output", 0, "basecolor"),
             (normal, "output", 1, "normal"),
             (rough, "output", 2, "roughness"),
             (metal, "output", 3, "metallic"),
-            (h, "output", 4, "height"),
+            (h, "height", 4, "height"),
             (ao, "output", 5, "ambientocclusion"),
         ],
     );
