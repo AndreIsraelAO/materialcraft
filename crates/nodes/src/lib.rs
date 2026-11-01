@@ -10,17 +10,23 @@
 pub mod atomic;
 pub mod catalog;
 pub mod filters;
+pub mod filters_extra;
 pub mod filters_more;
 pub mod flood_fill;
 pub mod function;
+pub mod fx_map;
 pub mod generators;
 pub mod material;
 pub mod material_more;
 pub mod noise;
+pub mod noise3d;
 pub mod noises_more;
 pub mod ops;
 pub mod patterns;
 pub mod patterns_more;
+pub mod svg;
+pub mod text;
+pub mod weathering;
 
 pub use catalog::{CookResult, Ctx, NodeDef, ParamDef, PortDef, PortKind, catalog, categories, find, resolve_params};
 
@@ -99,6 +105,16 @@ mod tests {
             "chevron",
             "basketweave",
             "tread_plate",
+            "fx_map",
+            "shape_splatter",
+            "perlin_noise_3d",
+            "simplex_noise_3d",
+            "worley_noise_3d",
+            "cracks",
+            "paint_strokes",
+            "scratches_generator",
+            "rust",
+            "moss",
         ] {
             let def = find(id).unwrap();
             let img = &cook(def, &[], 64).unwrap()[0];
