@@ -228,6 +228,8 @@ are in [`AGENTS.md`](AGENTS.md). Every bundled asset is listed with its licence 
 |---|---|
 | x86_64 | `materialcraft-<ver>-freebsd-x86_64.tar.gz` |
 
+Not in the first releases yet: build from source on FreeBSD until the release ships it.
+
 ### Web (WebAssembly)
 
 | Build | File | Notes |
