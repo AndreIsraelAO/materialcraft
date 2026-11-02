@@ -26,6 +26,8 @@ pub struct View3d {
     pub yaw: f32,
     pub pitch: f32,
     pub distance: f32,
+    /// Where the camera orbits: offset from the mesh center (mesh radii, world axes).
+    pub target: [f32; 3],
     /// Environment: `studio`, `sunset`, `overcast`, `night`.
     pub environment: String,
     pub env_rotation: f32,
@@ -44,6 +46,7 @@ impl Default for View3d {
             yaw: 35.0,
             pitch: 25.0,
             distance: 3.2,
+            target: [0.0; 3],
             environment: "studio".into(),
             env_rotation: 0.0,
             exposure: 0.0,
@@ -51,6 +54,38 @@ impl Default for View3d {
             show_axis: false,
             show_grid: false,
         }
+    }
+}
+
+/// The 3D view's camera preferences. The app keeps them in its preferences (Edit ▸ Preferences)
+/// and pushes them in with [`Session::set_camera_prefs`]; headless sessions use the defaults.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct CameraPrefs {
+    /// How far the orbit target may pan from the mesh center, in mesh radii.
+    pub pan_limit: f32,
+    /// Pan speed: 1 keeps the mesh under the pointer.
+    pub pan_speed: f32,
+}
+
+impl Default for CameraPrefs {
+    fn default() -> Self {
+        CameraPrefs { pan_limit: 5.0, pan_speed: 1.0 }
+    }
+}
+
+impl CameraPrefs {
+    /// These preferences with any non-finite or negative value replaced by its default.
+    pub fn sanitized(self) -> Self {
+        let d = CameraPrefs::default();
+        let or = |v: f32, default: f32| if v.is_finite() && v >= 0.0 { v } else { default };
+        CameraPrefs { pan_limit: or(self.pan_limit, d.pan_limit), pan_speed: or(self.pan_speed, d.pan_speed) }
+    }
+
+    /// An orbit target held within the pan limit (non-finite parts become 0).
+    pub fn clamp_target(&self, t: [f32; 3]) -> [f32; 3] {
+        let limit = self.sanitized().pan_limit;
+        t.map(|v| if v.is_finite() { v.clamp(-limit, limit) } else { 0.0 })
     }
 }
 
@@ -94,6 +129,8 @@ pub struct Session {
     pub view3d: View3d,
     /// Cap on node output size while editing (`None` = full size).
     pub preview_size: Option<u32>,
+    /// 3D view camera preferences (set with [`Session::set_camera_prefs`]).
+    pub camera: CameraPrefs,
     pub modified: bool,
     pub log: Vec<String>,
     pub clipboard: Option<Clip>,
@@ -122,6 +159,7 @@ impl Session {
             view2d: View2d { channel: "rgba".into(), ..View2d::default() },
             view3d: View3d::default(),
             preview_size: Some(512),
+            camera: CameraPrefs::default(),
             modified: false,
             log: Vec::new(),
             clipboard: None,
@@ -302,6 +340,12 @@ impl Session {
             .or_else(|| g.nodes.iter().find(|n| n.def == "output").map(|n| n.id))?;
         let port = if Some(id) == self.view2d.node { self.view2d.port } else { 0 };
         self.cooked.image(id, port).or_else(|| self.cooked.image(id, 0)).map(|i| (id, i))
+    }
+
+    /// Use new 3D camera preferences, pulling the orbit target back within a lowered pan limit.
+    pub fn set_camera_prefs(&mut self, prefs: CameraPrefs) {
+        self.camera = prefs.sanitized();
+        self.view3d.target = self.camera.clamp_target(self.view3d.target);
     }
 
     /// The open graph's material channels for the 3D view: usage id → image.

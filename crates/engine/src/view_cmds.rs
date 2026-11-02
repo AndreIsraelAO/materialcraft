@@ -29,7 +29,7 @@ pub(crate) fn specs() -> Vec<CommandSpec> {
             "3D view settings",
             [],
             None,
-            "{scene? (cube|cylinder|plane|sphere|material_ball|rounded_cube|torus), tiling?, yaw?, pitch?, distance?, environment? (studio|sunset|overcast|night), envRotation?, exposure?, heightScale?, axis?, grid?}",
+            "{scene? (cube|cylinder|plane|sphere|material_ball|rounded_cube|torus), tiling?, yaw?, pitch?, distance?, target? ([x, y, z] orbit point in mesh radii from its center, within the pan limit preference), environment? (studio|sunset|overcast|night), envRotation?, exposure?, heightScale?, axis?, grid?}",
             always,
             view3d
         ),
@@ -85,6 +85,18 @@ fn view2d(s: &mut Session, p: &J) -> Result<J> {
 }
 
 fn view3d(s: &mut Session, p: &J) -> Result<J> {
+    // Validated up front so a bad target changes nothing.
+    let target = match p.get("target") {
+        None => None,
+        Some(t) => {
+            let xyz: Option<Vec<f32>> =
+                t.as_array().filter(|a| a.len() == 3).map(|a| a.iter().filter_map(J::as_f64).map(|f| f as f32).filter(|f| f.is_finite()).collect());
+            match xyz.as_deref() {
+                Some(&[x, y, z]) => Some(s.camera.clamp_target([x, y, z])),
+                _ => return Err(bad("view.3d", "`target` is [x, y, z]")),
+            }
+        }
+    };
     if let Some(sc) = strp(p, "scene") {
         if sc == "custom" && s.custom_mesh.is_none() {
             return Err(bad("view.3d", "no mesh is loaded: use view.3d.loadMesh"));
@@ -113,6 +125,9 @@ fn view3d(s: &mut Session, p: &J) -> Result<J> {
     }
     if let Some(t) = f32p(p, "distance") {
         v.distance = t.clamp(1.2, 20.0);
+    }
+    if let Some(t) = target {
+        v.target = t;
     }
     if let Some(t) = f32p(p, "envRotation") {
         v.env_rotation = t.rem_euclid(360.0);

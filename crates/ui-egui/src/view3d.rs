@@ -1,6 +1,7 @@
 //! The 3D view: the open graph's material on a built-in scene, rendered by
 //! `materialcraft-render` (one ray per pixel at half resolution while the camera moves, 2×2
-//! supersampled when it rests). Left-drag orbits, the wheel zooms, Shift+drag turns the light.
+//! supersampled when it rests). Left-drag orbits, Alt+drag or middle-drag pans, the wheel zooms,
+//! Shift+drag turns the light and a double-click resets the camera.
 
 use egui::{Color32, ColorImage, Rect, Sense, TextureHandle, TextureOptions, Ui, pos2, vec2};
 use egui_phosphor::regular as icon;
@@ -64,7 +65,7 @@ fn menus(app: &mut MaterialCraftApp, ui: &mut Ui) {
             ui.menu_button(tr("Camera"), |ui| {
                 for (label, yaw, pitch) in [("Default", 35.0, 25.0), ("Front", 0.0, 0.0), ("Top", 0.0, 89.0), ("Side", 90.0, 0.0)] {
                     if ui.button(tr(label)).clicked() {
-                        app.run("view.3d", json!({"yaw": yaw, "pitch": pitch, "distance": 3.2}));
+                        app.run("view.3d", json!({"yaw": yaw, "pitch": pitch, "distance": 3.2, "target": [0.0, 0.0, 0.0]}));
                         ui.close();
                     }
                 }
@@ -114,7 +115,14 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
     if resp.dragged() {
         let d = resp.drag_delta();
         let v = &app.session.view3d;
-        if ui.input(|i| i.modifiers.shift) {
+        if ui.input(|i| i.modifiers.alt) || resp.dragged_by(egui::PointerButton::Middle) {
+            if let Some((_, scene)) = &app.view3d.scene {
+                let s = Settings { yaw: v.yaw, pitch: v.pitch, distance: v.distance, target: v.target, ..Settings::default() };
+                let cam = app.session.camera;
+                let k = cam.pan_speed / rect.height();
+                app.session.view3d.target = cam.clamp_target(materialcraft_render::pan(scene, &s, d.x * k, d.y * k));
+            }
+        } else if ui.input(|i| i.modifiers.shift) {
             let rot = (v.env_rotation + d.x * 0.5).rem_euclid(360.0);
             app.session.view3d.env_rotation = rot;
         } else {
@@ -132,7 +140,7 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
         }
     }
     if resp.double_clicked() {
-        app.run("view.3d", json!({"yaw": 35.0, "pitch": 25.0, "distance": 3.2}));
+        app.run("view.3d", json!({"yaw": 35.0, "pitch": 25.0, "distance": 3.2, "target": [0.0, 0.0, 0.0]}));
     }
     render(app, ui.ctx(), rect, moving || resp.is_pointer_button_down_on());
     let p = ui.painter_at(rect);
@@ -185,7 +193,7 @@ fn content_key(app: &MaterialCraftApp, w: u32, h: u32, show_env: bool) -> u64 {
     let mut hs = DefaultHasher::new();
     let v = &app.session.view3d;
     (w, h, show_env, &v.scene, &v.environment, app.session.custom_mesh.as_ref().map(|(n, _)| n)).hash(&mut hs);
-    for f in [v.yaw, v.pitch, v.distance, v.tiling, v.exposure, v.env_rotation, v.height_scale] {
+    for f in [v.yaw, v.pitch, v.distance, v.target[0], v.target[1], v.target[2], v.tiling, v.exposure, v.env_rotation, v.height_scale] {
         f.to_bits().hash(&mut hs);
     }
     if let Ok(g) = app.session.graph() {
@@ -224,6 +232,7 @@ fn render(app: &mut MaterialCraftApp, ctx: &egui::Context, rect: Rect, moving: b
         yaw: v.yaw,
         pitch: v.pitch,
         distance: v.distance,
+        target: v.target,
         tiling: v.tiling,
         exposure: v.exposure,
         env_rotation: v.env_rotation,

@@ -114,8 +114,11 @@ impl MaterialCraftApp {
         app
     }
 
-    /// Push the preferences that live in the session (preview size).
+    /// Push the preferences that live in the session (preview size, 3D camera).
     pub fn apply_prefs(&mut self) {
+        if self.session.camera != self.ui.prefs.camera.sanitized() {
+            self.session.set_camera_prefs(self.ui.prefs.camera);
+        }
         let p = if self.ui.prefs.preview_size == 0 { None } else { Some(self.ui.prefs.preview_size.clamp(64, 8192)) };
         if self.session.preview_size != p {
             self.session.preview_size = p;

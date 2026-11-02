@@ -57,6 +57,7 @@ pub fn session(s: &Session, graph: Option<usize>) -> J {
         "view2d": s.view2d,
         "view3d": s.view3d,
         "previewSize": s.preview_size,
+        "camera": s.camera,
         "cookMs": s.cooked.ms,
         "dirty": s.dirty,
         "history": s.history(),

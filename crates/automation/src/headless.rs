@@ -236,6 +236,7 @@ impl Headless {
             yaw: o.yaw.unwrap_or(v.yaw),
             pitch: o.pitch.unwrap_or(v.pitch),
             distance: v.distance,
+            target: v.target,
             tiling,
             exposure: v.exposure,
             env_rotation: v.env_rotation,

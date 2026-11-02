@@ -300,6 +300,8 @@ fn preferences(app: &mut MaterialCraftApp, ctx: &egui::Context) {
             },
         );
         ui.checkbox(&mut p.thumbnails, tr("Show node thumbnails"));
+        crate::widgets::slider(ui, tr("3D pan limit (mesh radii)"), &mut p.camera.pan_limit, 0.0..=20.0, 1);
+        crate::widgets::slider(ui, tr("3D pan speed"), &mut p.camera.pan_speed, 0.1..=4.0, 2);
     });
     if !open {
         app.ui.windows.preferences = false;
@@ -345,6 +347,7 @@ fn shortcuts(app: &mut MaterialCraftApp, ctx: &egui::Context) {
                     ("Middle drag / Alt+drag", "Pan the graph"),
                     ("Double-click node", "Show in the 2D view"),
                     ("Shift+D", "Disable selection"),
+                    ("Middle drag / Alt+drag (3D view)", "Pan the camera"),
                     ("Shift+drag (3D view)", "Turn the environment"),
                 ] {
                     ui.label(tr(what));
