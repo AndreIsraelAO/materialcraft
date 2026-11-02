@@ -8,6 +8,7 @@ use egui::{Color32, RichText, TextureHandle, Ui, vec2};
 use egui_phosphor::regular as icon;
 use materialcraft_engine::core::NodeId;
 use materialcraft_engine::core::function::FnGraph;
+use materialcraft_engine::formats::material::MATERIAL_EXT;
 use serde_json::{Value, json};
 
 use crate::MaterialCraftApp;
@@ -506,6 +507,9 @@ pub fn function_summary(app: &mut MaterialCraftApp, ui: &mut Ui, node: NodeId, p
     });
 }
 
+/// Extensions File ▸ Open reads: packages and portable materials (opening their source package).
+pub const OPEN_EXTS: &[&str] = &["mcraft", MATERIAL_EXT];
+
 /// File menu actions that need a file dialog. Returns true when handled.
 pub fn file_action(app: &mut MaterialCraftApp, ctx: &egui::Context, id: &str) -> bool {
     #[cfg(not(target_arch = "wasm32"))]
@@ -514,7 +518,7 @@ pub fn file_action(app: &mut MaterialCraftApp, ctx: &egui::Context, id: &str) ->
     {
         match id {
             "file.open" => {
-                if let Some(p) = rfd::FileDialog::new().add_filter("MaterialCraft package", &["mcraft"]).pick_file() {
+                if let Some(p) = rfd::FileDialog::new().add_filter("MaterialCraft package or material", OPEN_EXTS).pick_file() {
                     open_path(app, &p.display().to_string());
                 }
                 true
@@ -535,6 +539,24 @@ pub fn file_action(app: &mut MaterialCraftApp, ctx: &egui::Context, id: &str) ->
                         app.ui.add_recent(&path);
                         app.toast(format!("{} {path}", tr("Saved")), false);
                     }
+                }
+                true
+            }
+            "file.exportMaterial" => {
+                let name = format!(
+                    "{}.{MATERIAL_EXT}",
+                    materialcraft_engine::formats::safe_file_name(&app.session.graph().map(|g| g.name.clone()).unwrap_or_default())
+                );
+                if let Some(p) = rfd::FileDialog::new().set_file_name(name).add_filter("MaterialCraft material", &[MATERIAL_EXT]).save_file()
+                    && let Some(r) = app.run("file.exportMaterial", json!({"path": p.display().to_string()}))
+                {
+                    app.toast(format!("{} {}", tr("Exported"), r["path"].as_str().unwrap_or_default()), false);
+                }
+                true
+            }
+            "file.sendToTextureCraft" => {
+                if app.run("file.sendToTextureCraft", json!({})).is_some() {
+                    app.toast(tr("Sent to TextureCraft: find it on the shelf under My smart materials"), false);
                 }
                 true
             }
@@ -559,6 +581,7 @@ pub fn file_action(app: &mut MaterialCraftApp, ctx: &egui::Context, id: &str) ->
             "file.open" => crate::web_files::open(ctx),
             "file.importBitmap" => crate::web_files::import_bitmap(ctx),
             "file.save" | "file.saveAs" => crate::web_files::save(app),
+            "file.exportMaterial" => crate::web_files::export_material(app),
             _ => return false,
         }
         true

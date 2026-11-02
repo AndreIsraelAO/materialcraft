@@ -160,7 +160,7 @@ mod web {
 
     /// File ▸ Open: a package, picked in the browser.
     pub fn open(ctx: &egui::Context) {
-        pick(ctx, "MaterialCraft package", &["mcraft"], Pick::Package);
+        pick(ctx, "MaterialCraft package or material", crate::windows::OPEN_EXTS, Pick::Package);
     }
 
     /// 3D view ▸ Scene ▸ Load mesh.
@@ -182,6 +182,16 @@ mod web {
                 app.toast(format!("{} {name}", tr("Downloaded")), false);
             }
             Err(e) => app.toast(format!("{} {name}: {e}", tr("Couldn't save")), true),
+        }
+    }
+
+    /// File ▸ Export material: download the open graph as `<graph>.mcmat`.
+    pub fn export_material(app: &mut MaterialCraftApp) {
+        use materialcraft_engine::material_cmds::{MaterialOptions, material_bytes};
+        let name = format!("{}.mcmat", materialcraft_engine::formats::safe_file_name(&app.session.graph().map(|g| g.name.clone()).unwrap_or_default()));
+        match material_bytes(&app.session, app.session.graph, &MaterialOptions::default()).map_err(|e| e.to_string()).and_then(|b| download(&name, &b)) {
+            Ok(()) => app.toast(format!("{} {name}", tr("Downloaded")), false),
+            Err(e) => app.toast(format!("{}: {e}", tr("Couldn't export")), true),
         }
     }
 

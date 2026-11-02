@@ -504,6 +504,7 @@ fn graph_props(app: &mut MaterialCraftApp, ui: &mut Ui) {
             });
         }
     });
+    input_previews(app, ui, &g);
     section(ui, "graph-outputs", tr("Outputs"), |ui| {
         for n in g.nodes.iter().filter(|n| n.def == "output") {
             let usage = n.params.get("usage").and_then(Value::as_i32).unwrap_or(0) as usize;
@@ -516,6 +517,41 @@ fn graph_props(app: &mut MaterialCraftApp, ui: &mut Ui) {
             if ui.add(egui::Button::selectable(app.session.view2d.node == Some(n.id), label)).clicked() {
                 app.run("view.2d", json!({"node": n.id.0}));
             }
+        }
+    });
+}
+
+/// Preview images of the graph's input nodes: a bitmap resource, or (desktop) an image file such
+/// as a mesh map baked in TextureCraft.
+fn input_previews(app: &mut MaterialCraftApp, ui: &mut Ui, g: &materialcraft_engine::core::Graph) {
+    let inputs = materialcraft_engine::material_cmds::image_inputs(g);
+    if inputs.is_empty() {
+        return;
+    }
+    let resources: Vec<String> = app.session.pkg.resources.iter().map(|r| r.name.clone()).collect();
+    section(ui, "graph-input-images", tr("Input previews"), |ui| {
+        for i in &inputs {
+            let id = &i.identifier;
+            let bound = g.input_images.get(id);
+            ui.horizontal(|ui| {
+                ui.label(id);
+                egui::ComboBox::from_id_salt(("input-preview", id)).width(120.0).selected_text(bound.map_or(tr("None"), String::as_str)).show_ui(ui, |ui| {
+                    if ui.selectable_label(bound.is_none(), tr("None")).clicked() {
+                        app.run("graph.input.unbind", json!({"identifier": id}));
+                    }
+                    for r in &resources {
+                        if ui.selectable_label(bound == Some(r), r).clicked() {
+                            app.run("graph.input.bind", json!({"identifier": id, "resource": r}));
+                        }
+                    }
+                });
+                #[cfg(not(target_arch = "wasm32"))]
+                if crate::widgets::icon_button(ui, icon::FOLDER_OPEN, tr("Pick an image file (a mesh map baked in TextureCraft)"), false, 18.0).clicked()
+                    && let Some(p) = rfd::FileDialog::new().add_filter("Images", materialcraft_engine::formats::IMAGE_EXTENSIONS).pick_file()
+                {
+                    app.run("graph.input.bind", json!({"identifier": id, "path": p.display().to_string()}));
+                }
+            });
         }
     });
 }

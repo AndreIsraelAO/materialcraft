@@ -99,7 +99,10 @@ fn panic_hunt() {
     ];
     for spec in command_specs() {
         // Skip file writes to the working directory and opening paths.
-        if matches!(spec.id, "file.save" | "file.saveAs" | "file.export" | "file.open" | "file.importBitmap") {
+        if matches!(
+            spec.id,
+            "file.save" | "file.saveAs" | "file.export" | "file.open" | "file.importBitmap" | "file.exportMaterial" | "file.sendToTextureCraft"
+        ) {
             continue;
         }
         for p in &hostile {

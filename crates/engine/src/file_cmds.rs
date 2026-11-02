@@ -85,8 +85,15 @@ pub fn replace_package(s: &mut Session, pkg: Package, path: Option<String>) {
     s.dirty = true;
 }
 
-/// Open package bytes (any platform).
+/// Open package bytes (any platform). A portable material (`.mcmat`) opens the package it was
+/// cooked from, on its graph, with no file name (saving must not overwrite the material).
 pub fn open_bytes(s: &mut Session, bytes: &[u8], name: Option<String>) -> Result<()> {
+    if materialcraft_formats::material::is_material(bytes) {
+        let (manifest, source) = materialcraft_formats::material::read_material(bytes)?;
+        replace_package(s, materialcraft_formats::load_package(&source)?, None);
+        s.graph = s.pkg.graph_by_name(&manifest.graph).map_or(0, |(i, _)| i);
+        return Ok(());
+    }
     let pkg = materialcraft_formats::load_package(bytes)?;
     replace_package(s, pkg, name);
     Ok(())
@@ -152,8 +159,7 @@ pub fn export_outputs(s: &Session, gi: usize, ext: &str, pattern: &str, depth: O
         let node = g.node(id)?;
         let depth = depth
             .unwrap_or_else(|| Depth::from_format(if node.base.format == materialcraft_core::OutputFormat::Inherit { g.format } else { node.base.format }));
-        let srgb = matches!(usage, "baseColor" | "emissive" | "specular");
-        let bytes = encode(img, ext, depth, srgb)?;
+        let bytes = encode(img, ext, depth, materialcraft_formats::material::srgb_usage(usage))?;
         out.push(Exported { file: format!("{}.{}", output_name(pattern, &g.name, &ident, usage), ext.trim_start_matches('.')), bytes });
     }
     if out.is_empty() {
@@ -205,18 +211,21 @@ fn export(_: &mut Session, _: &J) -> Result<J> {
 /// Embed image bytes as a resource; returns the resource name.
 pub fn add_resource(s: &mut Session, file: &str, bytes: Vec<u8>, name: Option<&str>) -> Result<String> {
     materialcraft_formats::decode(&bytes)?;
+    s.edit("Import bitmap", |s| Ok(push_resource(&mut s.pkg, file, bytes, name)))
+}
+
+/// Add `bytes` to `pkg` as a resource named `name` (or after `file`), made unique; returns the name.
+pub(crate) fn push_resource(pkg: &mut Package, file: &str, bytes: Vec<u8>, name: Option<&str>) -> String {
     let file = materialcraft_formats::safe_file_name(file);
     let stem = name.map(str::to_string).unwrap_or_else(|| file.rsplit_once('.').map_or(file.clone(), |(a, _)| a.to_string()));
-    s.edit("Import bitmap", |s| {
-        let mut name = stem.clone();
-        let mut i = 1;
-        while s.pkg.resource(&name).is_some() {
-            name = format!("{stem}_{i}");
-            i += 1;
-        }
-        s.pkg.resources.push(Resource { name: name.clone(), file: format!("{name}_{file}"), bytes: std::sync::Arc::new(bytes) });
-        Ok(name)
-    })
+    let mut name = stem.clone();
+    let mut i = 1;
+    while pkg.resource(&name).is_some() {
+        name = format!("{stem}_{i}");
+        i += 1;
+    }
+    pkg.resources.push(Resource { name: name.clone(), file: format!("{name}_{file}"), bytes: std::sync::Arc::new(bytes) });
+    name
 }
 
 #[cfg(not(target_arch = "wasm32"))]

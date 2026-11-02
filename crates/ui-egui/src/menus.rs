@@ -44,6 +44,8 @@ pub const CATALOG: &[Item] = &[
     sep("File"),
     it("File", "Import bitmap...", "file.importBitmap", None),
     it("File", "Export outputs...", "ui.export", Some("Ctrl+Shift+E")),
+    it("File", "Export material...", "file.exportMaterial", None),
+    it("File", "Send to TextureCraft", "file.sendToTextureCraft", None),
     it("File", "Reload resources", "ui.reloadResources", None),
     sep("File"),
     it("File", "Exit", "ui.quit", Some("Ctrl+Q")),

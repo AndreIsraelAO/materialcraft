@@ -1,6 +1,6 @@
 # File format parity
 
-> **Last reviewed:** 2026-11-02 · **Last updated:** 2026-11-02 · **Change:** major (first version) · **Target:** the professional node-based material workflow
+> **Last reviewed:** 2026-11-02 · **Last updated:** 2026-11-02 · **Change:** minor (`.mcmat` portable materials) · **Target:** the professional node-based material workflow
 
 MaterialCraft does not read or write the reference app's proprietary package or archive formats
 (a non-goal of the clean room). It has its own package format and reads and writes the open image
@@ -19,7 +19,7 @@ formats material artists exchange.
 | Radiance HDR | Yes | Yes | Float (RGBE) | same |
 | SVG, fonts (resources) | No | — | — | gap |
 | Meshes for the 3D view (OBJ, glTF, FBX) | No | — | — | gap |
-| Published material archives | — | No | — | gap |
+| `.mcmat` portable material (zip: manifest, cooked maps, source package) | Yes (opens the source package) | Yes | Maps at 8-bit sRGB (color) / 16-bit linear (data); exposed inputs, presets and input nodes in the manifest. Our own format, shared with TextureCraft, not the reference app's archive format | `formats::material::tests`, engine `material_cmds::tests`, TextureCraft `materialcraft_link` |
 
 Exports write base color, emissive and specular through the sRGB curve and data maps (normal,
 roughness, metallic, height, ambient occlusion, opacity) linear.
@@ -28,4 +28,5 @@ roughness, metallic, height, ambient occlusion, opacity) linear.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-11-02 | minor | `.mcmat` portable materials replace the published-archive gap |
 | 2026-11-02 | major | First version |
