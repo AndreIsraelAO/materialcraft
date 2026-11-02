@@ -26,6 +26,8 @@ pub struct View3d {
     pub yaw: f32,
     pub pitch: f32,
     pub distance: f32,
+    /// Where the camera orbits: offset from the mesh center (mesh radii, world axes).
+    pub target: [f32; 3],
     /// Environment: `studio`, `sunset`, `overcast`, `night`.
     pub environment: String,
     pub env_rotation: f32,
@@ -44,6 +46,7 @@ impl Default for View3d {
             yaw: 35.0,
             pitch: 25.0,
             distance: 3.2,
+            target: [0.0; 3],
             environment: "studio".into(),
             env_rotation: 0.0,
             exposure: 0.0,

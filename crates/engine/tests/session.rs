@@ -151,3 +151,18 @@ fn presets_store_and_restore_inputs() {
     run(&mut s, "graph.preset.delete", json!({"name": "Low"}));
     assert!(s.graph().unwrap().presets.is_empty());
 }
+
+#[test]
+fn view3d_target_is_validated_clamped_and_reset() {
+    let mut s = sample_session();
+    run(&mut s, "view.3d", json!({"target": [0.5, -0.25, 99.0]}));
+    assert_eq!(s.view3d.target, [0.5, -0.25, 5.0]);
+    // A malformed target is refused and changes nothing, not even the other fields.
+    for bad in [json!([1.0, 2.0]), json!("up"), json!([0.0, "x", 0.0]), json!([0.0, 1e300, 0.0])] {
+        assert!(execute(&mut s, "view.3d", &json!({"target": bad, "yaw": 90.0})).is_err());
+        assert_eq!(s.view3d.target, [0.5, -0.25, 5.0]);
+        assert_eq!(s.view3d.yaw, 35.0);
+    }
+    run(&mut s, "view.3d.reset", json!({}));
+    assert_eq!(s.view3d.target, [0.0; 3]);
+}

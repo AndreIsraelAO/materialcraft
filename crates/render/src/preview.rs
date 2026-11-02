@@ -163,6 +163,8 @@ pub struct Settings {
     pub pitch: f32,
     /// In scene radii.
     pub distance: f32,
+    /// Orbit target offset from the scene center, in scene radii.
+    pub target: [f32; 3],
     pub tiling: f32,
     /// Stops.
     pub exposure: f32,
@@ -187,6 +189,7 @@ impl Default for Settings {
             yaw: 35.0,
             pitch: 25.0,
             distance: 3.2,
+            target: [0.0; 3],
             tiling: 1.0,
             exposure: 0.0,
             env_rotation: 0.0,
@@ -199,10 +202,14 @@ impl Default for Settings {
     }
 }
 
+/// How far the orbit target may wander from the scene center, in scene radii.
+pub const MAX_TARGET: f32 = 5.0;
+
 /// The orbit camera for `s` around `scene`.
 pub fn camera(scene: &Scene, s: &Settings) -> OrbitCamera {
+    let t = Vec3::from(s.target.map(|v| if v.is_finite() { v.clamp(-MAX_TARGET, MAX_TARGET) } else { 0.0 }));
     OrbitCamera {
-        target: scene.center,
+        target: scene.center + t * scene.radius,
         yaw: s.yaw.to_radians(),
         pitch: s.pitch.clamp(-89.0, 89.0).to_radians(),
         distance: s.distance.clamp(1.05, 50.0) * scene.radius,
@@ -210,6 +217,14 @@ pub fn camera(scene: &Scene, s: &Settings) -> OrbitCamera {
         scene_radius: scene.radius,
         ortho: false,
     }
+}
+
+/// `s.target` after panning the view by (dx, dy) viewport heights: the scene follows the pointer.
+pub fn pan(scene: &Scene, s: &Settings, dx: f32, dy: f32) -> [f32; 3] {
+    let mut cam = camera(scene, s);
+    cam.pan(dx, dy);
+    let t = (cam.target - scene.center) / scene.radius.max(1e-6);
+    t.to_array().map(|v| if v.is_finite() { v.clamp(-MAX_TARGET, MAX_TARGET) } else { 0.0 })
 }
 
 #[inline]
@@ -457,5 +472,31 @@ mod tests {
             let c = if id == "torus" { ((24 * 64 + 20) * 4) as usize } else { ((24 * 64 + 32) * 4) as usize };
             assert!(px[c] > px[c + 1], "{id}: center is not red ({:?})", &px[c..c + 3]);
         }
+    }
+
+    #[test]
+    fn panning_moves_the_scene_with_the_pointer() {
+        let scene = Scene::builtin("sphere");
+        let s = Settings::default();
+        let at = |s: &Settings| camera(&scene, s).project(scene.center, 1.0).unwrap();
+        // Dragging right and down by a tenth of the view moves the center right and down by
+        // the same fraction (NDC spans two view heights, y up).
+        let right = Settings { target: pan(&scene, &s, 0.1, 0.0), ..s };
+        let p = at(&right);
+        assert!((p.x - 0.2).abs() < 1e-3 && p.y.abs() < 1e-3, "{p:?}");
+        let down = Settings { target: pan(&scene, &s, 0.0, 0.1), ..s };
+        let p = at(&down);
+        assert!(p.x.abs() < 1e-3 && (p.y + 0.2).abs() < 1e-3, "{p:?}");
+        // Orbiting turns around the panned target, not the scene center.
+        let turned = Settings { yaw: s.yaw + 90.0, ..right };
+        let cam = camera(&scene, &turned);
+        assert!((cam.target - camera(&scene, &right).target).length() < 1e-5);
+        // Panning back returns home; hostile inputs stay finite and bounded.
+        let back = pan(&scene, &right, -0.1, 0.0);
+        assert!(back.iter().all(|v| v.abs() < 1e-4), "{back:?}");
+        let far = pan(&scene, &s, 1e9, f32::NAN);
+        assert!(far.iter().all(|v| v.is_finite() && v.abs() <= MAX_TARGET), "{far:?}");
+        let wild = Settings { target: [f32::NAN, f32::INFINITY, -1e9], ..s };
+        assert!(camera(&scene, &wild).eye().is_finite());
     }
 }

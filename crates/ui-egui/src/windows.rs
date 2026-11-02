@@ -345,6 +345,7 @@ fn shortcuts(app: &mut MaterialCraftApp, ctx: &egui::Context) {
                     ("Middle drag / Alt+drag", "Pan the graph"),
                     ("Double-click node", "Show in the 2D view"),
                     ("Shift+D", "Disable selection"),
+                    ("Middle drag / Alt+drag (3D view)", "Pan the camera"),
                     ("Shift+drag (3D view)", "Turn the environment"),
                 ] {
                     ui.label(tr(what));
