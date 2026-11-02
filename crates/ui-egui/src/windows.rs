@@ -300,6 +300,8 @@ fn preferences(app: &mut MaterialCraftApp, ctx: &egui::Context) {
             },
         );
         ui.checkbox(&mut p.thumbnails, tr("Show node thumbnails"));
+        crate::widgets::slider(ui, tr("3D pan limit (mesh radii)"), &mut p.camera.pan_limit, 0.0..=20.0, 1);
+        crate::widgets::slider(ui, tr("3D pan speed"), &mut p.camera.pan_speed, 0.1..=4.0, 2);
     });
     if !open {
         app.ui.windows.preferences = false;

@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use materialcraft_engine::CameraPrefs;
+
 use crate::docking::Dock;
 use crate::theme::{Accent, Brightness};
 
@@ -22,6 +24,8 @@ pub struct Prefs {
     pub library_list: bool,
     /// Open the home screen when the app starts.
     pub show_home: bool,
+    /// 3D view camera: pan limit and speed.
+    pub camera: CameraPrefs,
 }
 
 impl Default for Prefs {
@@ -35,6 +39,7 @@ impl Default for Prefs {
             thumbnails: true,
             library_list: false,
             show_home: true,
+            camera: CameraPrefs::default(),
         }
     }
 }
@@ -135,5 +140,22 @@ impl UiState {
         self.recent.retain(|p| p != path);
         self.recent.insert(0, path.to_string());
         self.recent.truncate(12);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn camera_prefs_persist_and_default_when_missing() {
+        // Preferences saved before the camera settings existed still load, with the defaults.
+        let old: Prefs = serde_json::from_value(serde_json::json!({"uiScale": 1.25})).unwrap();
+        assert_eq!(old.camera, CameraPrefs::default());
+        assert_eq!(old.ui_scale, 1.25);
+        let p = Prefs { camera: CameraPrefs { pan_limit: 8.0, pan_speed: 0.5 }, ..Prefs::default() };
+        let v = serde_json::to_value(&p).unwrap();
+        assert_eq!(v["camera"], serde_json::json!({"panLimit": 8.0, "panSpeed": 0.5}));
+        assert_eq!(serde_json::from_value::<Prefs>(v).unwrap(), p);
     }
 }

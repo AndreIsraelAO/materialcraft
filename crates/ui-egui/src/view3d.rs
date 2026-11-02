@@ -118,8 +118,9 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
         if ui.input(|i| i.modifiers.alt) || resp.dragged_by(egui::PointerButton::Middle) {
             if let Some((_, scene)) = &app.view3d.scene {
                 let s = Settings { yaw: v.yaw, pitch: v.pitch, distance: v.distance, target: v.target, ..Settings::default() };
-                let h = rect.height().max(1.0);
-                app.session.view3d.target = materialcraft_render::pan(scene, &s, d.x / h, d.y / h);
+                let cam = app.session.camera;
+                let k = cam.pan_speed / rect.height();
+                app.session.view3d.target = cam.clamp_target(materialcraft_render::pan(scene, &s, d.x * k, d.y * k));
             }
         } else if ui.input(|i| i.modifiers.shift) {
             let rot = (v.env_rotation + d.x * 0.5).rem_euclid(360.0);

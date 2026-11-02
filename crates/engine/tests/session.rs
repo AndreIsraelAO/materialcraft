@@ -155,14 +155,35 @@ fn presets_store_and_restore_inputs() {
 #[test]
 fn view3d_target_is_validated_clamped_and_reset() {
     let mut s = sample_session();
+    let limit = materialcraft_engine::CameraPrefs::default().pan_limit;
     run(&mut s, "view.3d", json!({"target": [0.5, -0.25, 99.0]}));
-    assert_eq!(s.view3d.target, [0.5, -0.25, 5.0]);
+    assert_eq!(s.view3d.target, [0.5, -0.25, limit]);
     // A malformed target is refused and changes nothing, not even the other fields.
     for bad in [json!([1.0, 2.0]), json!("up"), json!([0.0, "x", 0.0]), json!([0.0, 1e300, 0.0])] {
         assert!(execute(&mut s, "view.3d", &json!({"target": bad, "yaw": 90.0})).is_err());
-        assert_eq!(s.view3d.target, [0.5, -0.25, 5.0]);
+        assert_eq!(s.view3d.target, [0.5, -0.25, limit]);
         assert_eq!(s.view3d.yaw, 35.0);
     }
     run(&mut s, "view.3d.reset", json!({}));
     assert_eq!(s.view3d.target, [0.0; 3]);
+}
+
+#[test]
+fn camera_prefs_bound_the_pan_and_survive_hostile_values() {
+    use materialcraft_engine::CameraPrefs;
+    let mut s = sample_session();
+    run(&mut s, "view.3d", json!({"target": [3.0, -4.0, 0.5]}));
+    // Lowering the limit pulls the current target in, and later targets respect it.
+    s.set_camera_prefs(CameraPrefs { pan_limit: 2.0, ..CameraPrefs::default() });
+    assert_eq!(s.view3d.target, [2.0, -2.0, 0.5]);
+    run(&mut s, "view.3d", json!({"target": [0.0, 9.0, -9.0]}));
+    assert_eq!(s.view3d.target, [0.0, 2.0, -2.0]);
+    assert_eq!(run(&mut s, "session.inspect", json!({}))["camera"]["panLimit"], 2.0);
+    // A zero limit pins the camera to the mesh center.
+    s.set_camera_prefs(CameraPrefs { pan_limit: 0.0, ..CameraPrefs::default() });
+    assert_eq!(s.view3d.target, [0.0; 3]);
+    // Non-finite or negative values fall back to the defaults.
+    s.set_camera_prefs(CameraPrefs { pan_limit: f32::NAN, pan_speed: -1.0 });
+    assert_eq!(s.camera, CameraPrefs::default());
+    assert_eq!(CameraPrefs { pan_limit: f32::INFINITY, pan_speed: 2.0 }.sanitized().pan_speed, 2.0);
 }

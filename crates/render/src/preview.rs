@@ -163,7 +163,7 @@ pub struct Settings {
     pub pitch: f32,
     /// In scene radii.
     pub distance: f32,
-    /// Orbit target offset from the scene center, in scene radii.
+    /// Orbit target offset from the scene center, in scene radii (the caller bounds it).
     pub target: [f32; 3],
     pub tiling: f32,
     /// Stops.
@@ -202,14 +202,11 @@ impl Default for Settings {
     }
 }
 
-/// How far the orbit target may wander from the scene center, in scene radii.
-pub const MAX_TARGET: f32 = 5.0;
-
 /// The orbit camera for `s` around `scene`.
 pub fn camera(scene: &Scene, s: &Settings) -> OrbitCamera {
-    let t = Vec3::from(s.target.map(|v| if v.is_finite() { v.clamp(-MAX_TARGET, MAX_TARGET) } else { 0.0 }));
+    let target = scene.center + Vec3::from(s.target) * scene.radius;
     OrbitCamera {
-        target: scene.center + t * scene.radius,
+        target: if target.is_finite() { target } else { scene.center },
         yaw: s.yaw.to_radians(),
         pitch: s.pitch.clamp(-89.0, 89.0).to_radians(),
         distance: s.distance.clamp(1.05, 50.0) * scene.radius,
@@ -220,11 +217,12 @@ pub fn camera(scene: &Scene, s: &Settings) -> OrbitCamera {
 }
 
 /// `s.target` after panning the view by (dx, dy) viewport heights: the scene follows the pointer.
+/// Unbounded; non-finite parts become 0.
 pub fn pan(scene: &Scene, s: &Settings, dx: f32, dy: f32) -> [f32; 3] {
     let mut cam = camera(scene, s);
     cam.pan(dx, dy);
-    let t = (cam.target - scene.center) / scene.radius.max(1e-6);
-    t.to_array().map(|v| if v.is_finite() { v.clamp(-MAX_TARGET, MAX_TARGET) } else { 0.0 })
+    let t = (cam.target - scene.center) / scene.radius.max(f32::EPSILON);
+    t.to_array().map(|v| if v.is_finite() { v } else { 0.0 })
 }
 
 #[inline]
@@ -491,12 +489,15 @@ mod tests {
         let turned = Settings { yaw: s.yaw + 90.0, ..right };
         let cam = camera(&scene, &turned);
         assert!((cam.target - camera(&scene, &right).target).length() < 1e-5);
-        // Panning back returns home; hostile inputs stay finite and bounded.
+        // Panning back returns home; hostile inputs stay finite.
         let back = pan(&scene, &right, -0.1, 0.0);
         assert!(back.iter().all(|v| v.abs() < 1e-4), "{back:?}");
         let far = pan(&scene, &s, 1e9, f32::NAN);
-        assert!(far.iter().all(|v| v.is_finite() && v.abs() <= MAX_TARGET), "{far:?}");
-        let wild = Settings { target: [f32::NAN, f32::INFINITY, -1e9], ..s };
-        assert!(camera(&scene, &wild).eye().is_finite());
+        assert!(far.iter().all(|v| v.is_finite()), "{far:?}");
+        for target in [[f32::NAN, 0.0, 0.0], [0.0, f32::INFINITY, 0.0], [0.0, 0.0, f32::MAX]] {
+            let cam = camera(&scene, &Settings { target, ..s });
+            assert_eq!(cam.target, scene.center, "{target:?}");
+            assert!(cam.eye().is_finite());
+        }
     }
 }
