@@ -69,7 +69,7 @@ pub struct BatchParams {
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 pub struct NewGraphParams {
-    /// Template id: empty, pbr (default: six material outputs), bricks, stone_tiles, wood, rusty_metal, fabric, ground.
+    /// Template id: empty, pbr (default: six material outputs), bricks, stone_tiles, wood, metal_plates, rusty_metal, lava, marble, wicker, fabric, ground.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -186,6 +186,16 @@ pub struct RenderParams {
     /// Cook at the full graph size instead of the preview size.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub full: Option<bool>,
+    /// 3D: UV repeats of the material on the scene for this render only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tiling: Option<f32>,
+    /// 3D beauty render: real displacement from the height output, ambient occlusion and a
+    /// shadowed key light (slower).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hq: Option<bool>,
+    /// With `hq`: displacement depth in scene radii (default 0.04).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub displacement: Option<f32>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]

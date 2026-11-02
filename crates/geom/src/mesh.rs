@@ -280,6 +280,48 @@ impl Mesh {
         }));
     }
 
+    /// Each triangle split into four at its edge midpoints (shared edges share their midpoint);
+    /// attributes are interpolated and submesh ranges keep their triangles.
+    pub fn subdivided(&self) -> Mesh {
+        let mut m = Mesh { indices: Vec::with_capacity(self.indices.len() * 4), ..self.clone() };
+        let has = |len: usize| len == self.positions.len();
+        let (has_n, has_t, has_uv, has_c) = (has(self.normals.len()), has(self.tangents.len()), has(self.uvs.len()), has(self.colors.len()));
+        let mut mids = std::collections::HashMap::new();
+        let mut mid = |m: &mut Mesh, a: u32, b: u32| -> u32 {
+            *mids.entry((a.min(b), a.max(b))).or_insert_with(|| {
+                let (i, j) = (a as usize, b as usize);
+                m.positions.push((self.positions[i] + self.positions[j]) * 0.5);
+                if has_n {
+                    m.normals.push((self.normals[i] + self.normals[j]).normalize_or_zero());
+                }
+                if has_t {
+                    let (ti, tj) = (self.tangents[i], self.tangents[j]);
+                    m.tangents.push((ti.truncate() + tj.truncate()).normalize_or_zero().extend(ti.w));
+                }
+                if has_uv {
+                    m.uvs.push((self.uvs[i] + self.uvs[j]) * 0.5);
+                }
+                if has_c {
+                    m.colors.push((self.colors[i] + self.colors[j]) * 0.5);
+                }
+                (m.positions.len() - 1) as u32
+            })
+        };
+        for t in self.indices.chunks_exact(3) {
+            if t.iter().any(|&i| i as usize >= self.positions.len()) {
+                continue;
+            }
+            let (a, b, c) = (t[0], t[1], t[2]);
+            let (ab, bc, ca) = (mid(&mut m, a, b), mid(&mut m, b, c), mid(&mut m, c, a));
+            m.indices.extend_from_slice(&[a, ab, ca, ab, b, bc, ca, bc, c, ab, bc, ca]);
+        }
+        for s in &mut m.submeshes {
+            s.start *= 4;
+            s.count *= 4;
+        }
+        m
+    }
+
     /// Uniformly scale and translate so the mesh is centered with the given bounding radius.
     pub fn normalize_to(&mut self, radius: f32) {
         let (lo, hi) = self.bounds();
@@ -375,6 +417,16 @@ mod tests {
         }
         assert_eq!(m.material_of(1), Some(0));
         assert_eq!(m.triangles_of(0).collect::<Vec<_>>(), vec![0, 1]);
+    }
+
+    #[test]
+    fn subdivision_shares_edge_midpoints() {
+        let m = quad().subdivided();
+        // 4 corners + 5 edge midpoints (the diagonal is shared), 8 triangles.
+        assert_eq!((m.positions.len(), m.triangle_count()), (9, 8));
+        assert_eq!(m.uvs.len(), 9);
+        assert_eq!((m.submeshes[0].start, m.submeshes[0].count), (0, 24));
+        m.validate().unwrap();
     }
 
     #[test]

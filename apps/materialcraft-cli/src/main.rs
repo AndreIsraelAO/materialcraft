@@ -26,7 +26,7 @@ USAGE:
       Run [{\"id\", \"params\"}, ...] or {\"open\": <input>, \"steps\": [...], \"save\": <out.mcraft>}.
   materialcraft-cli new <template> <out.mcraft> [--size <px>] [--name <name>]
       A new package with one graph from a template (empty, pbr, bricks, stone_tiles, wood,
-      rusty_metal, fabric, ground).
+      metal_plates, rusty_metal, lava, marble, wicker, fabric, ground).
   materialcraft-cli cook <input> [--graph <index>] [--set <input>=<value>]... [--full]
       Cook a graph and print per-node timings and errors.
   materialcraft-cli export <input> <dir> [--graph <index>] [--set <input>=<value>]... [--format <ext>]
@@ -34,8 +34,10 @@ USAGE:
       Cook at full size and write every output (png, jpg, tga, tif, bmp, webp, exr, hdr).
   materialcraft-cli render <input> <out.png> [--size <W>x<H>] [--view 3d|2d] [--scene <id>] [--node <id>]
                    [--yaw <deg>] [--pitch <deg>] [--graph <index>] [--set <input>=<value>]... [--full]
+                   [--tiling <n>] [--hq [--displacement <radii>]]
       Render the material on a 3D scene (rounded_cube, cube, sphere, cylinder, plane, torus,
-      material_ball), or one node's output (--view 2d), to PNG. No GPU needed.
+      material_ball), or one node's output (--view 2d), to PNG. No GPU needed. --hq is a beauty
+      render: real displacement from the height output, ambient occlusion and a key light.
   materialcraft-cli mcp [--bridge <port>] [--token <token>] [--read-root <dir>] [--write-root <dir>]
       MCP server on stdio: headless (file access only below the roots), or bridged to
       `materialcraft --control <port>`.
@@ -56,7 +58,7 @@ const SUBCOMMANDS: &[(&str, &[&str], &[&str])] = &[
     ("new", &["--size", "--name"], &[]),
     ("cook", &["--graph", "--set"], &["--full"]),
     ("export", &["--graph", "--set", "--format", "--depth", "--pattern"], &[]),
-    ("render", &["--size", "--view", "--scene", "--node", "--yaw", "--pitch", "--graph", "--set"], &["--full"]),
+    ("render", &["--size", "--view", "--scene", "--node", "--yaw", "--pitch", "--graph", "--set", "--tiling", "--displacement"], &["--full", "--hq"]),
     ("mcp", &["--bridge", "--token", "--read-root", "--write-root"], &[]),
     ("serve", &["--port", "--read-root", "--write-root"], &[]),
 ];
@@ -249,6 +251,9 @@ fn run(cmd: &str, a: &Args) -> Result<(), String> {
                 node: a.num("--node")?,
                 port: None,
                 full: a.has("--full"),
+                tiling: a.num("--tiling")?,
+                hq: a.has("--hq"),
+                displacement: a.num("--displacement")?,
             };
             let r = h.render_png(&o).map_err(|e| e.to_string())?;
             materialcraft_engine::formats::write_atomic(std::path::Path::new(out), &r.png).map_err(|e| e.to_string())?;

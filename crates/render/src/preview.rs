@@ -3,6 +3,7 @@
 //! height output, then metallic/roughness GGX shading under image-based light (SH diffuse,
 //! prefiltered specular, an analytic environment BRDF), exposure and ACES tone mapping.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use materialcraft_geom::glam::{Vec2, Vec3};
@@ -75,9 +76,48 @@ impl Scene {
 
     /// A built-in scene (`rounded_cube`, `sphere`, …); unknown ids give the rounded cube.
     pub fn builtin(id: &str) -> Scene {
-        let mesh = materialcraft_geom::primitives::builtin(id).unwrap_or_else(|| materialcraft_geom::primitives::rounded_box(Vec3::ONE, 0.15));
+        Scene::new(builtin_mesh(id))
+    }
+
+    /// `base` subdivided to at most `max_tris` triangles and pushed along its normals by
+    /// `depth × (height − 0.5)` (the height map repeated `tiling` times): real silhouettes and
+    /// self-occlusion for offline renders. Coincident vertices (UV seams, hard edges) move
+    /// together, so the surface stays closed.
+    pub fn displaced(base: &Mesh, height: &Image, tiling: f32, depth: f32, max_tris: usize) -> Scene {
+        let mut mesh = base.clone();
+        if mesh.normals.len() != mesh.positions.len() {
+            mesh.compute_normals();
+        }
+        while mesh.triangle_count() > 0 && mesh.triangle_count() * 4 <= max_tris {
+            mesh = mesh.subdivided();
+        }
+        // Pre-filtered so fine detail (left to the normal map) does not spike the silhouette.
+        let height = height.resize(height.w.min(512), height.h.min(512), true);
+        let key = |p: Vec3| (p * 1e4).round().as_ivec3().to_array();
+        let mut welded: HashMap<[i32; 3], (Vec3, f32, f32)> = HashMap::new();
+        for ((p, n), uv) in mesh.positions.iter().zip(&mesh.normals).zip(&mesh.uvs) {
+            let e = welded.entry(key(*p)).or_default();
+            e.0 += *n;
+            e.1 += height.sample_gray(uv.x * tiling, uv.y * tiling, true);
+            e.2 += 1.0;
+        }
+        for p in &mut mesh.positions {
+            if let Some((n, h, count)) = welded.get(&key(*p)) {
+                *p += n.normalize_or_zero() * depth * (h / count - 0.5);
+            }
+        }
         Scene::new(mesh)
     }
+}
+
+/// A built-in mesh by id; unknown ids give the rounded cube.
+pub fn builtin_mesh(id: &str) -> Mesh {
+    let mut m = materialcraft_geom::primitives::builtin(id).unwrap_or_else(|| materialcraft_geom::primitives::rounded_box(Vec3::ONE, 0.15));
+    if id == "sphere" {
+        // The texture wraps twice around, so texels are square at the equator.
+        m.uvs.iter_mut().for_each(|uv| uv.x *= 2.0);
+    }
+    m
 }
 
 /// Prefiltered environment lighting.
@@ -134,11 +174,28 @@ pub struct Settings {
     pub show_env: bool,
     /// 1 = one ray per pixel, 2 = 2×2 supersampling.
     pub supersample: u32,
+    /// Ray-traced ambient occlusion rays per sample (0 = off): darkens the crevices of a
+    /// displaced scene.
+    pub ao_rays: u32,
+    /// Strength of a shadow-casting key light from the camera's upper left (0 = off).
+    pub key_light: f32,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { yaw: 35.0, pitch: 25.0, distance: 3.2, tiling: 1.0, exposure: 0.0, env_rotation: 0.0, height_scale: 0.03, show_env: false, supersample: 1 }
+        Settings {
+            yaw: 35.0,
+            pitch: 25.0,
+            distance: 3.2,
+            tiling: 1.0,
+            exposure: 0.0,
+            env_rotation: 0.0,
+            height_scale: 0.03,
+            show_env: false,
+            supersample: 1,
+            ao_rays: 0,
+            key_light: 0.0,
+        }
     }
 }
 
@@ -186,8 +243,52 @@ fn rotate_y(v: Vec3, deg: f32) -> Vec3 {
     Vec3::new(v.x * c + v.z * s, v.y, -v.x * s + v.z * c)
 }
 
+/// Per-pixel inputs of [`shade`] beyond the camera ray.
+struct Px {
+    /// Backdrop color (seen through transparent areas).
+    bg: Vec3,
+    /// Direction toward the key light.
+    key: Vec3,
+    /// Random rotation of the ambient occlusion ray pattern.
+    jitter: Vec2,
+}
+
+/// The fraction of `n`'s hemisphere at `p` that is open within `reach` (cosine-weighted).
+fn ambient_occlusion(scene: &Scene, p: Vec3, n: Vec3, rays: u32, jitter: Vec2) -> f32 {
+    let (t, b) = n.any_orthonormal_pair();
+    let reach = scene.radius * 0.3;
+    let open = (0..rays)
+        .filter(|&i| {
+            let u = (ibl::hammersley(i, rays) + jitter).fract();
+            let (r, phi) = (u.x.sqrt(), u.y * std::f32::consts::TAU);
+            let d = t * (r * phi.cos()) + b * (r * phi.sin()) + n * (1.0 - u.x).max(0.0).sqrt();
+            !scene.bvh.occluded(p, d, reach)
+        })
+        .count();
+    open as f32 / rays as f32
+}
+
+/// GGX specular plus Lambert diffuse from a white directional light along `l`.
+fn direct(n: Vec3, v: Vec3, l: Vec3, base: Vec3, f0: Vec3, metal: f32, rough: f32) -> Vec3 {
+    let ndl = n.dot(l);
+    if ndl <= 0.0 {
+        return Vec3::ZERO;
+    }
+    let ndv = n.dot(v).max(1e-4);
+    let h = (v + l).normalize_or_zero();
+    let (ndh, vdh) = (n.dot(h).max(0.0), v.dot(h).max(0.0));
+    let a2 = (rough * rough).powi(2).max(1e-4);
+    let d = a2 / (std::f32::consts::PI * (ndh * ndh * (a2 - 1.0) + 1.0).powi(2));
+    let k = (rough + 1.0).powi(2) / 8.0;
+    let g = ndl / (ndl * (1.0 - k) + k) * ndv / (ndv * (1.0 - k) + k);
+    let f = f0 + (Vec3::ONE - f0) * (1.0 - vdh).powi(5);
+    let spec = f * (d * g / (4.0 * ndv * ndl));
+    let diff = (Vec3::ONE - f) * base * (1.0 - metal) / std::f32::consts::PI;
+    (diff + spec) * ndl
+}
+
 /// Shade one camera ray; `None` = missed the mesh.
-fn shade(scene: &Scene, maps: &Maps, light: &Lighting, s: &Settings, origin: Vec3, dir: Vec3) -> Option<Vec3> {
+fn shade(scene: &Scene, maps: &Maps, light: &Lighting, s: &Settings, origin: Vec3, dir: Vec3, px: &Px) -> Option<Vec3> {
     let hit = scene.bvh.closest(origin, dir, f32::MAX)?;
     let m = &scene.mesh;
     let [i0, i1, i2] = m.tri(hit.tri as usize)?;
@@ -254,20 +355,42 @@ fn shade(scene: &Scene, maps: &Maps, light: &Lighting, s: &Settings, origin: Vec
     let spec = light.specular(rot(r), rough) * (f0 * sa + Vec3::splat(sb));
     let diff = light.diffuse(rot(n)) * diffuse_col;
     let mut c = (diff + spec) * ao;
+    if s.ao_rays > 0 || s.key_light > 0.0 {
+        // The true surface (a displaced scene's facets), offset to avoid self-hits.
+        let (p0, p1, p2) = (*m.positions.get(i0)?, *m.positions.get(i1)?, *m.positions.get(i2)?);
+        let face = (p1 - p0).cross(p2 - p0).normalize_or_zero();
+        let face = if face.dot(nrm) < 0.0 { -face } else { face };
+        let p = origin + dir * hit.t + face * scene.radius * 2e-4;
+        if s.ao_rays > 0 {
+            c *= ambient_occlusion(scene, p, face, s.ao_rays, px.jitter);
+        }
+        if s.key_light > 0.0 && face.dot(px.key) > 0.0 && !scene.bvh.occluded(p, px.key, f32::MAX) {
+            c += direct(n, v, px.key, base, f0, metal, rough) * s.key_light * ao;
+        }
+    }
     if let Some(e) = tex(&maps.emissive, uv) {
         c += Vec3::new(e[0], e[1], e[2]);
     }
     if let Some(o) = &maps.opacity {
         let a = o.sample_gray(uv.x, uv.y, true).clamp(0.0, 1.0);
-        c = c * a + backdrop(dir) * (1.0 - a);
+        c = c * a + px.bg * (1.0 - a);
     }
     Some(c)
 }
 
-/// The flat studio backdrop: a soft vertical gradient (linear).
-fn backdrop(dir: Vec3) -> Vec3 {
-    let t = (dir.y * 0.5 + 0.5).clamp(0.0, 1.0);
-    Vec3::splat(0.012).lerp(Vec3::splat(0.03), t)
+/// The studio backdrop at screen position `p` (−1..1): a soft vignette (linear).
+fn backdrop(p: Vec2) -> Vec3 {
+    let t = (p.length() * 0.75).clamp(0.0, 1.0);
+    Vec3::splat(0.04).lerp(Vec3::splat(0.012), t * t * (3.0 - 2.0 * t))
+}
+
+/// A cheap integer hash to 0..1 pairs (the per-sample AO pattern rotation).
+fn jitter(x: u32, y: u32) -> Vec2 {
+    let mut h = x.wrapping_mul(0x9E37_79B1) ^ y.wrapping_mul(0x85EB_CA77);
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x2C1B_3C6D);
+    h ^= h >> 12;
+    Vec2::new((h & 0xFFFF) as f32 / 65536.0, (h >> 16) as f32 / 65536.0)
 }
 
 /// Render `w × h` pixels to sRGB RGBA8.
@@ -278,31 +401,30 @@ pub fn render(scene: &Scene, maps: &Maps, light: &Lighting, s: &Settings, w: u32
     let ss = s.supersample.clamp(1, 4);
     let k = 2f32.powf(s.exposure);
     let bg_env = light.specular.get(3).or(light.specular.last());
+    // Key light from the camera's upper left, a little in front of the subject.
+    let fwd = cam.ray(Vec2::ZERO, aspect).dir;
+    let right = fwd.cross(Vec3::Y).normalize_or(Vec3::X);
+    let key = (right * -0.6 + right.cross(fwd) * 0.75 - fwd * 0.5).normalize_or_zero();
     let mut out = vec![0u8; (w * h * 4) as usize];
     out.par_chunks_mut(w as usize * 4).enumerate().for_each(|(y, row)| {
         for x in 0..w as usize {
             let mut acc = Vec3::ZERO;
-            let mut cover = 0.0;
             for sy in 0..ss {
                 for sx in 0..ss {
                     let px = (x as f32 + (sx as f32 + 0.5) / ss as f32) / w as f32 * 2.0 - 1.0;
                     let py = 1.0 - (y as f32 + (sy as f32 + 0.5) / ss as f32) / h as f32 * 2.0;
                     let ray = cam.ray(Vec2::new(px, py), aspect);
-                    match shade(scene, maps, light, s, ray.origin, ray.dir) {
-                        Some(c) => {
-                            acc += c * k;
-                            cover += 1.0;
-                        }
-                        None => {
-                            acc += match (s.show_env, bg_env) {
-                                (true, Some(e)) => e.sample(rotate_y(ray.dir, -s.env_rotation)) * k,
-                                _ => backdrop(ray.dir),
-                            };
-                        }
-                    }
+                    let bg = backdrop(Vec2::new(px, py));
+                    let p = Px { bg, key, jitter: jitter(x as u32 * ss + sx, y as u32 * ss + sy) };
+                    acc += match shade(scene, maps, light, s, ray.origin, ray.dir, &p) {
+                        Some(c) => c * k,
+                        None => match (s.show_env, bg_env) {
+                            (true, Some(e)) => e.sample(rotate_y(ray.dir, -s.env_rotation)) * k,
+                            _ => bg,
+                        },
+                    };
                 }
             }
-            let _ = cover;
             let c = acc / (ss * ss) as f32;
             let q = |v: f32| (linear_to_srgb(aces(v)) * 255.0 + 0.5) as u8;
             if let Some(px) = row.get_mut(x * 4..x * 4 + 4) {

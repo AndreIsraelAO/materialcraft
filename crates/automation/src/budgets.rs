@@ -12,6 +12,8 @@ pub const MAX_PNG_BYTES: usize = 5 << 20;
 pub const MAX_PNG_SIDE: u32 = 2048;
 /// Largest render edge for local CLI renders.
 pub const MAX_LOCAL_RENDER_SIDE: u32 = 4096;
+/// Triangle budget of an `hq` render's displaced mesh (~100 bytes each with its BVH).
+pub const HQ_TRIANGLES: usize = 1_200_000;
 /// Largest reply line read from the app (full-window screenshots are big).
 pub const MAX_BRIDGE_REPLY_BYTES: usize = 64 << 20;
 

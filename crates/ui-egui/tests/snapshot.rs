@@ -47,10 +47,12 @@ fn snapshots() {
     // Select a node so the properties panel shows parameters.
     let id = h.state().session.graph().unwrap().nodes[0].id;
     h.state_mut().run("graph.select", json!({"ids": [id.0]}));
-    h.state_mut().run("view.2d", json!({"node": 17, "histogram": true}));
+    h.state_mut().run("view.2d", json!({"node": 16, "histogram": true}));
     settle(&mut h, 30);
     save(&mut h, &dir, "workspace");
-    for (tpl, name) in [("wood", "wood"), ("rusty_metal", "rusty-metal"), ("stone_tiles", "stone-tiles"), ("fabric", "fabric"), ("ground", "ground")] {
+    for (tpl, name) in
+        [("wood", "wood"), ("rusty_metal", "rusty-metal"), ("stone_tiles", "stone-tiles"), ("fabric", "fabric"), ("ground", "ground"), ("lava", "lava")]
+    {
         h.state_mut().run("file.new", json!({"template": tpl, "size": 1024}));
         h.state_mut().ui.frame_all = true;
         settle(&mut h, 40);
