@@ -140,7 +140,11 @@ never a panic. The shared standard is `../craftrules/standards/never-crash.md`.
    alternatives.
 8. **Performance is a feature.** Edits re-cook only what lies downstream (the cache). Cooking runs
    on a worker thread; the UI never blocks on it. Benchmark heavy nodes in release.
-9. **Verify UI changes visually.** `MC_SNAPSHOT_DIR=<dir> cargo test -p materialcraft-ui-egui
+9. **Cross-app formats are shared conventions.** `.mcmat` portable materials are read by
+   TextureCraft with its own code: keep `docs/control-protocol.md` § Portable materials, the usage
+   ids and the mesh-map input identifiers in step with TextureCraft, bump the manifest `version`
+   for incompatible changes, and never make one app depend on the other's crates.
+10. **Verify UI changes visually.** `MC_SNAPSHOT_DIR=<dir> cargo test -p materialcraft-ui-egui
    --release --test snapshot -- --ignored` renders the real UI offscreen; look at the PNGs.
 
 ## 4. Picking work

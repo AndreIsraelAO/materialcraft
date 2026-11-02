@@ -1,6 +1,6 @@
 # Control protocol and MCP
 
-> **Last reviewed:** 2026-11-02 · **Last updated:** 2026-11-02 · **Change:** major (first version) · **Target:** the professional node-based material workflow
+> **Last reviewed:** 2026-11-02 · **Last updated:** 2026-11-02 · **Change:** minor (portable materials for TextureCraft) · **Target:** the professional node-based material workflow
 
 Agents drive MaterialCraft three ways, all dispatching the same engine commands:
 
@@ -83,9 +83,45 @@ casts, arithmetic (`add sub mul div mod neg dot`), logic and comparison (`and or
 ne`), functions (`abs floor ceil frac sqrt exp log sin cos tan atan2 pow min max clamp lerp length
 normalize rand noise`) and `if_else`. Values are 4-wide; scalars broadcast.
 
+## Portable materials (TextureCraft)
+
+A `.mcmat` portable material is a zip: `material.json` (manifest), `maps/<usage>.png` and
+`source.mcraft` (the package). TextureCraft applies it as a fill layer and keeps the exposed inputs
+editable, re-cooking through `materialcraft-cli`. The format is a convention the two apps share;
+each has its own reader and writer (`crates/formats/src/material.rs` here), so keep them in step.
+
+```json
+{ "format": "craft-material", "version": 1, "name": "Brick wall", "graph": "Brick_wall", "size": [2048, 2048],
+  "maps": [{"usage": "baseColor", "file": "maps/baseColor.png", "colorSpace": "srgb"}],
+  "parameters": [{"id": "wear", "label": "Wear", "default": {"t": "float", "v": 0.5}, "min": 0, "max": 1,
+                  "value": {"t": "float", "v": 0.8}}],
+  "inputs": [{"identifier": "curvature", "kind": "gray"}],
+  "presets": [{"name": "Worn", "values": {"wear": {"t": "float", "v": 1.0}}}],
+  "source": "source.mcraft" }
+```
+
+- Usages: `baseColor`, `normal`, `roughness`, `metallic`, `height`, `ambientOcclusion`, `emissive`,
+  `opacity`, `specular` (the first output of each). Color usages (`baseColor`, `emissive`,
+  `specular`) are 8-bit sRGB PNGs, the rest 16-bit linear. Normals are tangent space, OpenGL (Y+);
+  height is 0..1 with 0.5 at the surface.
+- Parameters are the exposed inputs other apps can set (float, float2-4, int, int2, bool, color,
+  enum), values in the typed form `{"t", "v"}`; colors are linear RGBA.
+- Inputs are the graph's input nodes. Mesh maps feed them by identifier: `ambientOcclusion`,
+  `curvature`, `thickness`, `position`, `worldNormal`, `normal`, `height`, `id`, `bentNormal`,
+  `opacity`, `colorMap`, `worldDirection`.
+- Readers ignore unknown fields and refuse a `version` newer than they know.
+
+| Command | Params |
+|---|---|
+| `file.exportMaterial` | `{path, graph?, size? (px), values? {input: value}, inputs? {identifier: image path}}`: cook and write a `.mcmat`. TextureCraft runs `materialcraft-cli run source.mcraft file.exportMaterial {...}` to re-cook at its texture set's resolution with its own values and baked mesh maps |
+| `file.sendToTextureCraft` | `{graph?}`: export into TextureCraft's library folder (`Documents/TextureCraft/library`), where its shelf lists it |
+| `graph.input.bind` / `graph.input.unbind` | `{identifier, resource? \| path?}` / `{identifier}`: a preview image for an input node (a mesh map exported from TextureCraft), saved in the package |
+| `file.open` | also opens a `.mcmat`'s source package, on its graph, with no file name |
+
 ## MCP tools
 
 `session_inspect`, `command_list`, `command_run`, `command_batch`, `library_list`, `graph_new`,
 `node_add`, `node_connect`, `node_param`, `package_open`, `package_save`, `bitmap_import`,
 `outputs_export`, `view_render` (headless) and, bridged to the app, `view_screenshot`,
-`ui_screenshot`, `ui_inspect`, `ui_menu_invoke`, `ui_input`.
+`ui_screenshot`, `ui_inspect`, `ui_menu_invoke`, `ui_input`. `package_open` opens `.mcmat` files
+too; exporting one is CLI-only for now (the workspace sandbox refuses `file.*` commands).

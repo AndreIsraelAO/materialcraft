@@ -246,6 +246,10 @@ pub struct Graph {
     /// Named sets of input values.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub presets: Vec<Preset>,
+    /// Preview images of the graph's input nodes: identifier → bitmap resource (a mesh map
+    /// baked in TextureCraft, say). Instances feed their inputs from their ports instead.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub input_images: BTreeMap<String, String>,
     #[serde(default)]
     pub attributes: Attributes,
     /// The id the next node, frame, comment or pin gets.
@@ -272,6 +276,7 @@ impl Graph {
             exposed: Vec::new(),
             inputs: BTreeMap::new(),
             presets: Vec::new(),
+            input_images: BTreeMap::new(),
             attributes: Attributes::default(),
             next_id: 1,
         }
