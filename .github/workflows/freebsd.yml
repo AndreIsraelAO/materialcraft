@@ -5,19 +5,11 @@
 # uploaded and no secrets are used.
 name: FreeBSD
 
-# The VM build takes one to several hours, so it runs nightly on main rather than on every push
-# or dependency change: a drifted dependency still shows up within a day. PRs that change the
-# FreeBSD packaging itself still run it.
+# Manual only while this repo is private: the shared workflow's VM needs 12 GB, and a private
+# repo's ubuntu-latest has about 7 GB, so it can't start. release.yml builds FreeBSD on a larger
+# runner. When the repo is public, restore the push to release, the nightly schedule and the
+# pull_request paths that the other apps use.
 on:
-  push:
-    branches: [release]
-  schedule:
-    - cron: "17 2 * * *"
-  pull_request:
-    paths:
-      - .github/workflows/freebsd.yml
-      - packaging/freebsd/**
-      - packaging/env.sh
   workflow_dispatch:
 
 concurrency:
