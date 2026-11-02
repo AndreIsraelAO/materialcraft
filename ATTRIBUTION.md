@@ -30,14 +30,6 @@ images, materials, sample graphs, presets, environments) may ever be added.
 | `docs/brand/artcraft-*.svg`, `docs/brand/artcraft-*.png` | ArtCraft logo and mark | ArtCraft Team | storytold/craftrules `assets/brand/` | ArtCraft brand terms, not open source ([`docs/brand/LICENSE-brand.txt`](docs/brand/LICENSE-brand.txt)) |
 | `crates/nodes/src/text.rs` (`GLYPHS`) | Single-stroke vector font of the Text node (A–Z, a–z, 0–9, punctuation) | MaterialCraft contributors | Original, designed as stroke data in code | MIT OR Apache-2.0 |
 
-The four HDR environment maps in `assets/hdr/` are published by Poly Haven under
-[CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/).
-[Poly Haven's license page](https://polyhaven.com/license) permits commercial use and
-redistribution and does not require attribution; the credits above follow MaterialCraft's asset
-policy. A copy of the CC0 legal code is kept in [`assets/hdr/LICENSE.txt`](assets/hdr/LICENSE.txt).
-The asset pages and license page were checked on 2026-11-02. Poly Haven's website text, logos
-and example renders are outside the CC0 asset license.
-
 ## Third-party assets compiled into the binary
 
 These come from Rust crate dependencies (not files in this repository) and keep their licenses.
