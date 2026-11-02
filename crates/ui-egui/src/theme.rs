@@ -75,8 +75,8 @@ impl Accent {
     /// with white lettering. Cyan is MaterialCraft's own; the others are VectorCraft's.
     pub(crate) fn colors(self, dark: bool) -> (Color32, Color32) {
         let (a, strong) = match (self, dark) {
-            // The app icon's cyan (#1ea7c4, assets/app-icon/materialcraft.svg).
-            (Accent::Cyan, true) => (0x4cc6de, 0x168aa3),
+            // The app icon's teal (#178a9c, assets/app-icon/materialcraft.svg).
+            (Accent::Cyan, true) => (0x4cc6de, 0x178a9c),
             (Accent::Cyan, false) => (0x0e7489, 0x13788f),
             (Accent::Copper, true) => (0xe58a4e, 0xc2672b),
             (Accent::Copper, false) => (0xae5419, 0xb85c22),

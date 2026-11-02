@@ -18,12 +18,12 @@
     #materialcraft_loading a { color: #e0e0e0; pointer-events: auto; }
     /* Indeterminate while the WebAssembly downloads (the page has no script to measure it); the
        app sets its value through the startup steps once it runs. */
-    #materialcraft_progress { width: min(280px, 70vw); height: 4px; border: 0; border-radius: 2px; background: #333; color: #1ea7c4; accent-color: #1ea7c4; }
+    #materialcraft_progress { width: min(280px, 70vw); height: 4px; border: 0; border-radius: 2px; background: #333; color: #178a9c; accent-color: #178a9c; }
     #materialcraft_progress::-webkit-progress-bar { background: #333; border-radius: 2px; }
-    #materialcraft_progress::-webkit-progress-value { background: #1ea7c4; border-radius: 2px; }
-    #materialcraft_progress::-moz-progress-bar { background: #1ea7c4; border-radius: 2px; }
+    #materialcraft_progress::-webkit-progress-value { background: #178a9c; border-radius: 2px; }
+    #materialcraft_progress::-moz-progress-bar { background: #178a9c; border-radius: 2px; }
     /* Styled progress bars lose the native "busy" animation: a sweep stands in while downloading. */
-    #materialcraft_progress:indeterminate { background: linear-gradient(90deg, #333 0%, #1ea7c4 50%, #333 100%) 0 0 / 300% 100%;
+    #materialcraft_progress:indeterminate { background: linear-gradient(90deg, #333 0%, #178a9c 50%, #333 100%) 0 0 / 300% 100%;
       animation: materialcraft-busy 1.4s linear infinite; }
     #materialcraft_progress:indeterminate::-webkit-progress-bar { background: transparent; }
     #materialcraft_progress:indeterminate::-moz-progress-bar { background: transparent; }

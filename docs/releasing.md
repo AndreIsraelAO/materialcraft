@@ -157,7 +157,7 @@ unsigned artifact and a `::warning::`, never a failed build.
 
 ## Icons
 
-`assets/app-icon/materialcraft.svg` is the engraved zebra (the owner's original drawing, vectorised
+`assets/app-icon/materialcraft.svg` is the engraved rhino (the owner's original drawing, vectorised
 to three colours, craftrules `standards/icon-design.md`); `materialcraft-small.svg` is a lighter
 trace for the hicolor scalable icon. `packaging/icons.sh` renders everything else with resvg and
 `cargo xtask ico|icns`: the hicolor PNGs (16-512 px) and scalable SVG, `materialcraft-1024.png`,

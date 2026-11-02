@@ -15,8 +15,7 @@ Every known shortfall, most important first. Pick from the top.
 | 7 | `ui.screenshot` times out on this test machine | The window-capture callback never fires here; `view.screenshot` and the offscreen snapshot test work | Agents bridged to the app see views but not the whole window | 1 h | — |
 | 8 | Translations and keymap editor | English only, fixed shortcuts | Non-English users; custom shortcuts | 8 h | localization-parity |
 | 9 | Minimap and multi-graph tabs | One graph at a time, no overview | Navigating big graphs | 5 h | target-app-parity (Graph editing, UI and UX) |
-| 10 | Owner's mascot app icon | A placeholder drawn in code | Brand consistency with the other Crafting Apps | owner | — |
-| 11 | First signed release | Workflows copied, not run | Downloads | 3 h | target-app-parity (Platforms) |
+| 10 | First signed release | Workflows copied, not run | Downloads | 3 h | target-app-parity (Platforms) |
 
 ## Revision history
 

@@ -7,6 +7,10 @@
   </a>
 </p>
 
+<p align="center">
+  <img src="assets/app-icon/hicolor/256x256/apps/ai.storyteller.materialcraft.png" width="128" height="128" alt="MaterialCraft icon: an engraved rhino on a teal tile">
+</p>
+
 <h1 align="center">MaterialCraft</h1>
 
 <p align="center">
@@ -20,7 +24,7 @@
 </p>
 
 <p align="center">
-  <img alt="Status: in active development" src="https://img.shields.io/badge/status-in%20active%20development-1ea7c4?style=flat-square">
+  <img alt="Status: in active development" src="https://img.shields.io/badge/status-in%20active%20development-178a9c?style=flat-square">
   <img alt="Written in pure Rust" src="https://img.shields.io/badge/pure-Rust-b83a24?style=flat-square&logo=rust&logoColor=white">
   <img alt="Runs on macOS, Windows, Linux, FreeBSD and the web" src="https://img.shields.io/badge/runs%20on-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux%20%C2%B7%20FreeBSD%20%C2%B7%20Web-555555?style=flat-square">
   <img alt="MCP server for agents" src="https://img.shields.io/badge/agents-MCP%20server-555555?style=flat-square">
@@ -284,8 +288,8 @@ procedurally by MaterialCraft itself; no third-party textures, scans or models a
 screenshots. MaterialCraft is an independent, clean-room implementation of a node-based procedural
 material workflow and is not affiliated with any other software vendor.
 
-The app icon (a material sphere fed by a node, on MaterialCraft cyan `#1ea7c4`) is an original
-placeholder drawn in code for this project; its files are in [`assets/app-icon/`](assets/app-icon/).
+The app icon (an engraved rhino on MaterialCraft teal `#178a9c`) is original artwork made for this
+project by its owner; its files and notes are in [`assets/app-icon/`](assets/app-icon/).
 
 The ArtCraft name, wordmark and logos in [`docs/brand/`](docs/brand/) are trademarks of the
 ArtCraft Team and are not covered by this license. They may be used only unmodified, and only as
