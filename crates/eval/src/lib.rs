@@ -248,6 +248,16 @@ pub fn cook(pkg: &Package, gi: usize, opts: &Options, cache: &mut Cache) -> Cook
     let t0 = now_ms();
     let mut out = Cooked::default();
     let Some(graph) = pkg.graphs.get(gi) else { return out };
+    // The top-level graph's input nodes show their preview images; the caller's images win.
+    let bound;
+    let opts = if opts.depth == 0 && !graph.input_images.is_empty() {
+        let mut inputs: BTreeMap<String, Image> = graph.input_images.iter().filter_map(|(id, res)| Some((id.clone(), (opts.resource)(res)?))).collect();
+        inputs.extend(opts.inputs.iter().map(|(k, v)| (k.clone(), v.clone())));
+        bound = Options { only: opts.only.clone(), inputs, overrides: opts.overrides.clone(), ..*opts };
+        &bound
+    } else {
+        opts
+    };
     let order = graph.topo_order();
     let needed: Option<std::collections::BTreeSet<NodeId>> = opts.only.as_ref().map(|ids| {
         let mut s: std::collections::BTreeSet<NodeId> = ids.iter().copied().collect();
@@ -354,7 +364,8 @@ fn cook_node(pkg: &Package, graph: &Graph, node: &Node, done: &Cooked, vars: &BT
     let result: Result<Vec<Image>, String> = if node.disabled {
         Ok(vec![inputs.iter().flatten().next().cloned().unwrap_or_else(|| Image::filled(w, h, Kind::Gray, [0.0; 4])); out_ports.len().max(1)])
     } else if let Some(img) = input_img {
-        Ok(vec![img.resize(w, h, tile)])
+        let img = img.resize(w, h, tile);
+        Ok(vec![if node.def == "input_grayscale" { img.to_gray() } else { img }])
     } else if node.def == "graph_instance" {
         cook_instance(pkg, node, &in_ports, &out_ports, &inputs, &params, (w, h), opts, cache)
     } else if let Some(d) = def {
@@ -516,5 +527,28 @@ mod tests {
         let img = c.image(inst, 0).unwrap();
         assert!((img.data[0] - (1.0 - 0.0722 * 0.25 - 0.2126 * 0.25 - 0.7152 * 0.25)).abs() < 1e-4, "{}", img.data[0]);
         assert!(c.nodes[&selfi].error.is_some() || c.nodes[&selfi].outputs.len() == 1);
+    }
+
+    #[test]
+    fn input_nodes_read_bound_preview_images() {
+        let mut p = Package::new("p");
+        let mut g = Graph::new("g");
+        g.size = [4, 4];
+        let i = g.add_node("input_grayscale", [0.0, 0.0]);
+        g.node_mut(i).unwrap().params.insert("identifier".into(), Value::Text("curvature".into()));
+        let o = g.add_node("output", [100.0, 0.0]);
+        g.connect(i, "output", o, "input").unwrap();
+        g.input_images.insert("curvature".into(), "curv".into());
+        p.graphs.push(g);
+        let res = |n: &str| (n == "curv").then(|| Image::filled(4, 4, Kind::Color, [0.8, 0.8, 0.8, 1.0]));
+        let mut cache = Cache::default();
+        let c = cook(&p, 0, &Options::new(&res), &mut cache);
+        let img = c.image(o, 0).unwrap();
+        assert!(img.is_gray() && (img.data[0] - 0.8).abs() < 1e-4, "bound image, as gray");
+        // The caller's image wins over the bound one.
+        let mut opts = Options::new(&res);
+        opts.inputs.insert("curvature".into(), Image::filled(4, 4, Kind::Gray, [0.1; 4]));
+        let c = cook(&p, 0, &opts, &mut cache);
+        assert!((c.image(o, 0).unwrap().data[0] - 0.1).abs() < 1e-4);
     }
 }

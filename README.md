@@ -110,6 +110,10 @@ its own procedural nodes (no photos, scans or textures from anywhere else) and r
   with odd inputs in tests, unlimited undo from snapshots, and lossless `.mcraft` packages.
 - **Open.** Export base color, normal, roughness, metallic, height and ambient occlusion as PNG,
   JPEG, TGA, TIFF, BMP, WEBP, EXR or HDR at 8, 16 or 32 bits, with your own file name pattern.
+- **Works with TextureCraft.** **File ▸ Send to TextureCraft** puts a material on TextureCraft's
+  shelf as a portable `.mcmat`; painted onto a mesh there, its graph inputs stay live sliders and
+  colors, re-cooked by MaterialCraft at the texture set's resolution with the mesh's baked maps
+  feeding the graph's input nodes.
 - **Agent-native.** Every menu item and edit is a command you can drive from the CLI, a JSON
   control channel (including synthetic mouse and keyboard input) or an **MCP server**, so Claude
   and other agents can build materials the way a person does.
@@ -129,6 +133,7 @@ cargo run --release -p materialcraft-cli -- new wood wood.mcraft
 cargo run --release -p materialcraft-cli -- render wood.mcraft wood.png --scene material_ball --full
 cargo run --release -p materialcraft-cli -- export wood.mcraft textures --format png --depth 16
 cargo run --release -p materialcraft-cli -- export my.mcraft out --set wear=0.7    # with a graph input "wear" set first
+cargo run --release -p materialcraft-cli -- run my.mcraft file.exportMaterial '{"path": "my.mcmat", "size": 2048}'   # for TextureCraft
 cd apps/materialcraft-web && trunk serve                      # web build
 cargo xtask ci                                                # fmt, clippy, tests, layering, wasm
 ```
@@ -162,12 +167,13 @@ SVG and Text, noises including tileable 3D ones, patterns, filters, the flood fi
 whole-material blending and weathering), function graphs with a visual editor and dynamic
 parameters, sub-graphs with exposed inputs and presets, the full editor (graph, library,
 properties, 2D view with histogram, 3D view with your own OBJ/glTF meshes), `.mcraft` packages,
-texture export, the browser build with file I/O, the CLI, the control channel and the MCP server
-all work today. We estimate about two thirds (≈ 66%) of a material artist's daily workflow works
+texture export, portable `.mcmat` materials that TextureCraft paints with (inputs stay editable
+there), the browser build with file I/O, the CLI, the control channel and the MCP server
+all work today. We estimate about two thirds (≈ 67%) of a material artist's daily workflow works
 end to end; [docs/target-app-parity.md](docs/target-app-parity.md) has the breakdown.
 
 **What's missing:** the rest of the node library, a GPU 3D view with tessellation and lights,
-mesh-based nodes, published material archives, translations and the first signed release. The ranked list is in
+mesh-based nodes, translations and the first signed release. The ranked list is in
 [`docs/gaps.md`](docs/gaps.md).
 
 **Workspace:** `crates/{core, image, geom, nodes, eval, formats, engine, render, automation, ui-egui}`

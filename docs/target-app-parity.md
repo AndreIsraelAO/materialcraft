@@ -1,9 +1,9 @@
 # Parity with the reference workflow
 
-> **Last reviewed:** 2026-11-02 · **Last updated:** 2026-11-02 · **Change:** major (function editor, 227 nodes, FX-Map/SVG/Text) · **Target:** the professional node-based material workflow (desktop app; the web app is assessed later)
+> **Last reviewed:** 2026-11-02 · **Last updated:** 2026-11-02 · **Change:** minor (Files 60% → 70%: portable materials for TextureCraft) · **Target:** the professional node-based material workflow (desktop app; the web app is assessed later)
 
-**Overall: ≈ 66%** of a material artist's daily workflow works end to end (engine + UI +
-automation + tests), weighted by how much of the day each area carries. **Remaining: ≈ 88 Opus
+**Overall: ≈ 67%** of a material artist's daily workflow works end to end (engine + UI +
+automation + tests), weighted by how much of the day each area carries. **Remaining: ≈ 83 Opus
 5.5 agent hours** (see [roadmap.md](roadmap.md)).
 
 | Area | Weight | Done | What works | Main gaps |
@@ -15,10 +15,10 @@ automation + tests), weighted by how much of the day each area carries. **Remain
 | Graph parameters and instances | 8 | 70% | Exposed inputs (float, int, bool, enum, color) bound to parameters of any compatible type, shown in groups, edited with one shared editor on the graph and on its instances; presets (save, apply, delete); sub-graph instances with their own inputs and outputs; graph attributes; `--set` on the CLI | Visibility conditions, per-instance output sizes, embedded vs. linked packages |
 | 2D view | 5 | 80% | Pan/zoom, fit and 1:1, RGBA/R/G/B/A isolation, 3×3 tiling check, histogram, pixel readout, size/format line, save image | Color picker to parameters, UV overlay |
 | 3D view | 10 | 55% | Rounded cube, cube, sphere, cylinder, plane, torus and material ball; OBJ, glTF and GLB meshes; base color, normal, roughness, metallic, height (parallax occlusion), AO, emissive and opacity; 4 procedural environments with rotation and exposure; orbit/zoom; tiling; supersampling at rest | GPU renderer with tessellation, lights, material/shader switching, path-traced renderer |
-| Files | 8 | 60% | `.mcraft` packages with embedded bitmaps; export of every output (PNG, JPEG, TGA, TIFF, BMP, WEBP, EXR, HDR; 8/16/32 bits; name pattern; sRGB vs. linear by usage); bitmap import (PNG, JPEG, TGA, TIFF, BMP, WEBP, EXR, HDR); mesh import (OBJ, glTF, GLB); open, save, import and export in the browser; atomic writes; autosave; recent files | Published (cooked) material archives, package dependencies, SVG and font files as resources |
+| Files | 8 | 70% | `.mcraft` packages with embedded bitmaps; `.mcmat` portable materials (cooked maps, exposed inputs, presets, input nodes, the source package) that TextureCraft paints with and re-cooks through the CLI at its own resolution, values and mesh maps; preview images for input nodes; export of every output (PNG, JPEG, TGA, TIFF, BMP, WEBP, EXR, HDR; 8/16/32 bits; name pattern; sRGB vs. linear by usage); bitmap import (PNG, JPEG, TGA, TIFF, BMP, WEBP, EXR, HDR); mesh import (OBJ, glTF, GLB); open, save, import and export in the browser; atomic writes; autosave; recent files | An MCP tool for portable materials, package dependencies, SVG and font files as resources |
 | UI and UX | 8 | 70% | Dockable/floatable panels (explorer, library, graph, 3D, 2D, properties, console, history), menus, main toolbar, graph toolbar with atomic quick-insert, library with live previews, properties with curve/gradient/color editors, New graph dialog with rendered templates, export dialog, preferences (brightness, accent, scale, preview size, autosave), shortcuts list, home screen at startup (samples and recent files), visual function editor, presets bar, accessible names on every widget, status bar | Translations, keymap editor, minimap, multi-graph tabs |
 | Platforms | 4 | 50% | Windows, macOS, Linux, FreeBSD and web builds compile; browser file I/O; packaging scripts and release workflows | First release run |
-| **Total** | **100** | **≈ 66%** | | |
+| **Total** | **100** | **≈ 67%** | | |
 
 Beyond the reference app: every edit is a command available through MCP, the CLI and the app's
 control channel (including synthetic mouse and keyboard input), the engine runs headless with the
@@ -35,5 +35,6 @@ and is tested.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-11-02 | minor | ≈ 66% → ≈ 67%: `.mcmat` portable materials and TextureCraft interop (Files 70%) |
 | 2026-11-02 | major | Function editor, dynamic parameters, presets, 227 nodes (FX-Map, SVG, Text, 3D noises, weathering), mesh import, browser file I/O, histogram: ≈ 51% → ≈ 66% |
 | 2026-11-02 | major | First assessment after the first day of work |

@@ -12,6 +12,7 @@ pub mod edit_cmds;
 pub mod file_cmds;
 pub mod graph_cmds;
 pub mod inspect;
+pub mod material_cmds;
 pub mod node_cmds;
 pub mod samples;
 pub mod session;

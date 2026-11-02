@@ -1,6 +1,6 @@
 # Architecture
 
-> **Last reviewed:** 2026-11-02 · **Last updated:** 2026-11-02 · **Change:** major (first version) · **Target:** the professional node-based material workflow
+> **Last reviewed:** 2026-11-02 · **Last updated:** 2026-11-02 · **Change:** minor (portable materials and TextureCraft) · **Target:** the professional node-based material workflow
 
 MaterialCraft is a Cargo workspace of small crates in strict layers (`cargo xtask layers` enforces
 them). Everything below the UI is plain Rust with no UI toolkit and builds for
@@ -18,8 +18,8 @@ L1  nodes     the node library: NodeDef (ports, parameters, category, cook fn) f
 L2  eval      cooking: topological order, output sizes (relative to input / parent, absolute, preview
               cap), parameter resolution (defaults, overrides, bindings to exposed inputs), the
               content-addressed LRU cache, graph instances (sub-graphs, recursion-guarded)
-L2  formats   .mcraft packages (zip: package.json + resources/), bitmap decode, texture encode
-              (PNG/JPEG/TGA/TIFF/BMP/WEBP/EXR/HDR at 8/16/32 bits), atomic writes
+L2  formats   .mcraft packages (zip: package.json + resources/), .mcmat portable materials, bitmap
+              decode, texture encode (PNG/JPEG/TGA/TIFF/BMP/WEBP/EXR/HDR at 8/16/32 bits), atomic writes
 L3  engine    Session (package, open graph, selection, 2D/3D view state, snapshot undo, cache),
               the command registry, inspect, sample materials and graph templates
 L3  render    the 3D view: BVH ray casts, parallax occlusion from the height output, GGX PBR with
@@ -73,3 +73,12 @@ checks and README screenshots.
 A `.mcraft` package is a zip: `package.json` (the serde `Package`, format version 1) and
 `resources/<name>` for embedded bitmaps. Node parameters are stored only where they differ from the
 catalog defaults, so new defaults reach old files and files stay small.
+
+## Other apps
+
+A `.mcmat` portable material (`formats/src/material.rs`, `engine/src/material_cmds.rs`) holds a
+graph's cooked maps, its portable exposed inputs, presets and input nodes, and the source package.
+TextureCraft paints with it and re-cooks it by running `materialcraft-cli run <package>
+file.exportMaterial {path, size, values, inputs}`: the apps share the file format and the command
+line, never code. Graphs keep preview images for their input nodes (`Graph::input_images`, mesh
+maps from TextureCraft); `eval::cook` feeds them to the top-level graph, and a caller's images win.
