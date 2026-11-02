@@ -70,18 +70,18 @@
   <p align="center"><sub><b>Wood planks</b>: anisotropic grain, warped and laid over planks</sub></p>
 </td>
 <td width="50%" valign="top">
-  <img src="docs/images/materialcraft-fabric.png" alt="A woven fabric graph: a weave pattern with soft fuzz, as a blue cloth on the rounded cube and in the 2D view" width="100%">
-  <p align="center"><sub><b>Woven fabric</b>: a weave pattern with fuzz and a color ramp</sub></p>
+  <img src="docs/images/materialcraft-lava.png" alt="A lava rock graph: Voronoi plates with cracks and glowing seams, as dark rock with orange emissive cracks on the rounded cube" width="100%">
+  <p align="center"><sub><b>Lava rock</b>: cracked plates over glowing emissive seams</sub></p>
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
-  <img src="docs/images/materialcraft-new-graph.png" alt="The New graph dialog: template spheres for empty, PBR, brick wall, stone tiles, wood planks, rusty metal, woven fabric and stone ground, with the graph name and size" width="100%">
+  <img src="docs/images/materialcraft-new-graph.png" alt="The New graph dialog: template spheres for empty, PBR, brick wall, stone tiles, wood planks, painted metal plates, rusty metal, lava rock, polished marble, wicker weave, woven fabric and mossy ground, with the graph name and size" width="100%">
   <p align="center"><sub><b>New graph</b>: start from a PBR template or a sample material</sub></p>
 </td>
 <td width="50%" valign="top">
-  <img src="docs/images/materialcraft-materials.png" alt="Six material balls rendered by MaterialCraft: red brick, wood planks, rusty metal, stone tiles, blue woven fabric and stone ground" width="100%">
-  <p align="center"><sub><b>Six sample materials</b> on the material ball, rendered by <code>materialcraft-cli render</code></sub></p>
+  <img src="docs/images/materialcraft-ground.png" alt="A mossy ground graph: stones height-blended with dirt and moss grown in the crevices, on the rounded cube and in the 2D view" width="100%">
+  <p align="center"><sub><b>Mossy ground</b>: stones and dirt height-blended, with moss in the gaps</sub></p>
 </td>
 </tr>
 </table>
@@ -90,11 +90,13 @@
 
 Every material below is a node graph that ships with MaterialCraft as a template, built only from
 its own procedural nodes (no photos, scans or textures from anywhere else) and rendered by
-`materialcraft-cli render --scene material_ball --full`.
+`materialcraft-cli render --scene sphere --full --hq` (the height output displaces the mesh, with
+ray-traced ambient occlusion and a shadowed key light).
 
 <p align="center">
-  <img src="docs/images/materialcraft-materials.png" alt="Brick, wood planks, rusty metal, stone tiles, woven fabric and stone ground on material balls" width="100%">
+  <img src="docs/images/materialcraft-materials.png" alt="Eight material spheres: red brick, lava rock with glowing cracks, blue painted metal plates with rivets, wood planks, wicker weave, mossy ground, cracked stone tiles and polished white marble" width="100%">
 </p>
+<p align="center"><sub>Brick wall · Lava rock · Painted metal plates · Wood planks<br>Wicker weave · Mossy ground · Stone tiles · Polished marble</sub></p>
 
 ## Why MaterialCraft
 
@@ -126,7 +128,7 @@ cargo run --release -p materialcraft -- package.mcraft        # open a package
 cargo run --release -p materialcraft -- --control 7878        # + JSON control channel
 cargo run --release -p materialcraft-cli -- mcp               # MCP server (stdio)
 cargo run --release -p materialcraft-cli -- new wood wood.mcraft
-cargo run --release -p materialcraft-cli -- render wood.mcraft wood.png --scene material_ball --full
+cargo run --release -p materialcraft-cli -- render wood.mcraft wood.png --scene sphere --full --hq
 cargo run --release -p materialcraft-cli -- export wood.mcraft textures --format png --depth 16
 cargo run --release -p materialcraft-cli -- export my.mcraft out --set wear=0.7    # with a graph input "wear" set first
 cd apps/materialcraft-web && trunk serve                      # web build

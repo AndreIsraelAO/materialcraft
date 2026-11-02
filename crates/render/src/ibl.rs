@@ -158,7 +158,7 @@ impl EnvImage {
     }
 }
 
-fn hammersley(i: u32, n: u32) -> Vec2 {
+pub(crate) fn hammersley(i: u32, n: u32) -> Vec2 {
     Vec2::new(i as f32 / n as f32, i.reverse_bits() as f32 * 2.328_306_4e-10)
 }
 

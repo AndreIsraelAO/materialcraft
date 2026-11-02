@@ -8,7 +8,7 @@ use materialcraft_engine::{Session, commands, file_cmds, inspect};
 use materialcraft_render::{Lighting, Maps, Scene, Settings};
 use serde_json::{Value, json};
 
-use crate::budgets::{MAX_LOCAL_RENDER_SIDE, MAX_PNG_SIDE, check_png, encode_png};
+use crate::budgets::{HQ_TRIANGLES, MAX_LOCAL_RENDER_SIDE, MAX_PNG_SIDE, check_png, encode_png};
 use crate::workspace::{MAX_READ_BYTES, authorize_command};
 use crate::{AuthorizedWorkspace, AutomationError, bad};
 
@@ -40,6 +40,13 @@ pub struct RenderOptions {
     pub port: Option<usize>,
     /// Cook at full size instead of the preview size.
     pub full: bool,
+    /// 3D: UV repeats override (the session's view is not changed).
+    pub tiling: Option<f32>,
+    /// 3D: beauty render: the height output displaces a subdivided mesh, with ray-traced
+    /// ambient occlusion, a shadowed key light and 3×3 supersampling. Slower; for stills.
+    pub hq: bool,
+    /// 3D, with `hq`: displacement depth in scene radii (default 0.04).
+    pub displacement: Option<f32>,
 }
 
 /// A PNG render.
@@ -224,21 +231,35 @@ impl Headless {
         if self.light.as_ref().is_none_or(|l| l.name != v.environment) {
             self.light = Some(Lighting::new(&v.environment));
         }
-        let settings = Settings {
+        let tiling = o.tiling.unwrap_or(v.tiling).clamp(0.1, 64.0);
+        let mut settings = Settings {
             yaw: o.yaw.unwrap_or(v.yaw),
             pitch: o.pitch.unwrap_or(v.pitch),
             distance: v.distance,
-            tiling: v.tiling,
+            tiling,
             exposure: v.exposure,
             env_rotation: v.env_rotation,
             height_scale: v.height_scale,
             show_env: false,
             supersample: 2,
+            ..Settings::default()
         };
         let (w, h) = (o.width.unwrap_or(1024).clamp(16, max), o.height.unwrap_or(768).clamp(16, max));
         let maps = Maps::from_usages(self.session.material_maps());
         let (Some((_, scene)), Some(light)) = (&self.scene, &self.light) else { return (w, h, vec![0; (w * h * 4) as usize]) };
-        (w, h, materialcraft_render::render(scene, &maps, light, &settings, w, h))
+        let displaced = match (o.hq, &maps.height) {
+            (true, Some(height)) => {
+                settings.height_scale = 0.0;
+                Some(Scene::displaced(&scene.mesh, height, tiling, o.displacement.unwrap_or(0.04).clamp(0.0, 0.5) * scene.radius, HQ_TRIANGLES))
+            }
+            _ => None,
+        };
+        if o.hq {
+            settings.supersample = 3;
+            settings.ao_rays = 8;
+            settings.key_light = 2.5;
+        }
+        (w, h, materialcraft_render::render(displaced.as_ref().unwrap_or(scene), &maps, light, &settings, w, h))
     }
 }
 

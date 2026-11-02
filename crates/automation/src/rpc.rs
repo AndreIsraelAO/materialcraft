@@ -95,6 +95,9 @@ impl Headless {
                     node: u32_of(p, "node")?.map(u64::from),
                     port: u32_of(p, "port")?.map(|v| v as usize),
                     full: bool_of(p, "full")?,
+                    tiling: f32_of(p, "tiling")?,
+                    hq: bool_of(p, "hq")?,
+                    displacement: f32_of(p, "displacement")?,
                 };
                 let r = self.render_png(&o)?;
                 Ok(json!({ "width": r.width, "height": r.height, "png": base64::engine::general_purpose::STANDARD.encode(r.png) }))

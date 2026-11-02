@@ -18,9 +18,10 @@ images, materials, sample graphs, presets, environments) may ever be added.
 | `assets/app-icon/LICENSE.txt` | App icon licence | MaterialCraft contributors | original | MIT OR Apache-2.0 |
 | `docs/images/materialcraft-workspace.png` | README screenshot: the workspace with the brick wall sample | MaterialCraft contributors | Offscreen render of MaterialCraft's UI (`crates/ui-egui/tests/snapshot.rs`) | MIT OR Apache-2.0 |
 | `docs/images/materialcraft-wood.png` | README screenshot: the wood planks template | MaterialCraft contributors | Offscreen render of MaterialCraft's UI | MIT OR Apache-2.0 |
-| `docs/images/materialcraft-fabric.png` | README screenshot: the woven fabric template | MaterialCraft contributors | Offscreen render of MaterialCraft's UI | MIT OR Apache-2.0 |
+| `docs/images/materialcraft-lava.png` | README screenshot: the lava rock template | MaterialCraft contributors | Offscreen render of MaterialCraft's UI | MIT OR Apache-2.0 |
+| `docs/images/materialcraft-ground.png` | README screenshot: the mossy ground template | MaterialCraft contributors | Offscreen render of MaterialCraft's UI | MIT OR Apache-2.0 |
 | `docs/images/materialcraft-new-graph.png` | README screenshot: the New graph dialog | MaterialCraft contributors | Offscreen render of MaterialCraft's UI | MIT OR Apache-2.0 |
-| `docs/images/materialcraft-materials.png` | README render: six sample materials on the material ball | MaterialCraft contributors | `materialcraft-cli render --scene material_ball --full`, six renders side by side | MIT OR Apache-2.0 |
+| `docs/images/materialcraft-materials.png` | README render: eight sample materials on spheres | MaterialCraft contributors | `materialcraft-cli render --scene sphere --full --hq` of the templates, eight renders in a grid | MIT OR Apache-2.0 |
 | `docs/brand/artcraft-*.svg`, `docs/brand/artcraft-*.png` | ArtCraft logo and mark | ArtCraft Team | storytold/craftrules `assets/brand/` | ArtCraft brand terms, not open source ([`docs/brand/LICENSE-brand.txt`](docs/brand/LICENSE-brand.txt)) |
 | `crates/nodes/src/text.rs` (`GLYPHS`) | Single-stroke vector font of the Text node (A–Z, a–z, 0–9, punctuation) | MaterialCraft contributors | Original, designed as stroke data in code | MIT OR Apache-2.0 |
 

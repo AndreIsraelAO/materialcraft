@@ -26,7 +26,7 @@ Agents drive MaterialCraft three ways, all dispatching the same engine commands:
 | `package.open {path}` / `package.save {path?}` | headless | workspace-scoped package I/O |
 | `bitmap.import {path, name?}` | headless | embed an image as a resource |
 | `outputs.export {dir, format?, pattern?, depth?, graph?}` | headless | cook at full size and write every output |
-| `render {view?, width?, height?, yaw?, pitch?, scene?, node?, port?, full?}` | headless | PNG (base64) of the 3D view or of one node |
+| `render {view?, width?, height?, yaw?, pitch?, scene?, node?, port?, full?, tiling?, hq?, displacement?}` | headless | PNG (base64) of the 3D view or of one node; `hq` is the beauty render (displaced mesh, ray-traced AO, shadowed key light, 3×3 supersampling), `displacement` its depth in scene radii |
 | `ui.inspect` | app | UI state, the graph view rectangle, every node's screen rectangle, every port's screen position, fps, toasts |
 | `ui.menu.list` / `ui.menu.invoke {id}` | app | the menu catalog; behave like a click |
 | `ui.set {...}` | app | merge fields into the UI state |

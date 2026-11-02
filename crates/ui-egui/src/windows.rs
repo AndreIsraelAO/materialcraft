@@ -111,13 +111,14 @@ fn modal(ctx: &egui::Context, id: &str, title: &str, open: &mut bool, size: egui
 fn new_graph(app: &mut MaterialCraftApp, ctx: &egui::Context) {
     let mut open = true;
     let mut create = false;
-    modal(ctx, "new-graph", tr("New graph"), &mut open, vec2(640.0, 420.0), |ui| {
+    modal(ctx, "new-graph", tr("New graph"), &mut open, vec2(640.0, 490.0), |ui| {
         let tk = Tokens::get(ui.ctx());
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(400.0);
                 ui.label(RichText::new(tr("Templates")).strong());
-                egui::ScrollArea::vertical().max_height(330.0).show(ui, |ui| {
+                // Three rows of templates without scrolling.
+                egui::ScrollArea::vertical().max_height(400.0).show(ui, |ui| {
                     for row in materialcraft_engine::samples::TEMPLATES.chunks(4) {
                         ui.horizontal(|ui| {
                             for (id, label) in row {

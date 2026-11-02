@@ -230,6 +230,7 @@ fn render(app: &mut MaterialCraftApp, ctx: &egui::Context, rect: Rect, moving: b
         height_scale: v.height_scale,
         show_env: app.view3d.show_env,
         supersample: if full { 2 } else { 1 },
+        ..Settings::default()
     };
     let maps = Maps::from_usages(app.session.material_maps());
     let (Some((_, scene)), Some(light)) = (&app.view3d.scene, &app.view3d.light) else { return };
