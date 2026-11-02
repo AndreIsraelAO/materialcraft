@@ -27,9 +27,6 @@ jobs:
       app-title: "MaterialCraft"
       craft-fonts-ref: 3d9ab3a132ed0eff457e424226a435a901da30d3
       web-craft-fonts: true
-      # shortcut: no FreeBSD build while the repo is private: its 2-core/7 GB runners can't hold the
-      # 12 GB FreeBSD VM. Remove this line once the repo is public (4-core/16 GB runners).
-      has-freebsd: false
       version: ${{ inputs.version }}
     secrets:
       APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
