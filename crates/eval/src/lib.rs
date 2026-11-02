@@ -191,6 +191,14 @@ pub fn error_image(w: u32, h: u32) -> Image {
     Image::filled(w, h, Kind::Color, [1.0, 0.0, 1.0, 1.0])
 }
 
+/// A fingerprint of an input image: its size and 4096 evenly strided values. (Its address is no
+/// key: a freed image's memory comes back for the next one.)
+// shortcut: a sample, not every value; hash the whole image if inputs that differ only between samples ever collide.
+fn image_key(i: &Image) -> u64 {
+    let step = (i.data.len() / 4096).max(1);
+    hash_of(&(i.w, i.h, i.data.iter().step_by(step).map(|v| v.to_bits()).collect::<Vec<u32>>()))
+}
+
 fn hash_of(v: &impl Hash) -> u64 {
     let mut h = DefaultHasher::new();
     v.hash(&mut h);
@@ -354,7 +362,7 @@ fn cook_node(pkg: &Package, graph: &Graph, node: &Node, done: &Cooked, vars: &BT
         &in_keys,
         res_hash,
         sub_hash,
-        input_img.map(|i| (i.w, i.h, Arc::as_ptr(&i.data) as usize)),
+        input_img.map(image_key),
         serde_json::to_string(vars).unwrap_or_default(),
     ));
     if let Some(v) = cache.get(key) {
