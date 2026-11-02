@@ -315,6 +315,8 @@ jobs:
           [ "$(gh release view "$tag" --json isDraft --jq .isDraft)" = true ]
           gh release download "$tag" --pattern SHA256SUMS.txt --dir "$RUNNER_TEMP"
           # The shared draft job also picks up any archive that finished before it ran.
-          { grep -v -- '-freebsd-' "$RUNNER_TEMP/SHA256SUMS.txt" || true; sha256sum -- *; } | sort -k2 >SHA256SUMS.txt
+          # Written outside this directory, or the * below would list the checksum file itself.
+          { grep -v -- '-freebsd-' "$RUNNER_TEMP/SHA256SUMS.txt" || true; sha256sum -- *; } | sort -k2 >"$RUNNER_TEMP/SHA256SUMS.new"
+          mv "$RUNNER_TEMP/SHA256SUMS.new" SHA256SUMS.txt
           gh release upload "$tag" --clobber -- *
           cat SHA256SUMS.txt
