@@ -154,6 +154,9 @@ pub struct ExportParams {
     /// 8, 16 or 32 bits (default: the graph's output format).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depth: Option<u32>,
+    /// Pixels of the larger side, rounded down to a power of two, 16 to 8192 (default: the graph's size).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u32>,
     /// Graph index (default: the open graph).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub graph: Option<u32>,

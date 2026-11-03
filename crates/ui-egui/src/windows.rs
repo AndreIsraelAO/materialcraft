@@ -229,14 +229,15 @@ fn export(app: &mut MaterialCraftApp, ctx: &egui::Context) {
                 ui.selectable_value(&mut app.ui.export_depth, d, tr(l));
             }
         });
+        let graph_size = app.session.graph().map_or(String::new(), |g| format!("{} ({} x {})", tr("Graph's size"), 1u32 << g.size[0], 1u32 << g.size[1]));
         let size_label = match app.ui.export_size {
-            0 => tr("Graph's size").to_string(),
-            px => format!("{px} x {px}"),
+            0 => graph_size.clone(),
+            px => format!("{px} px"),
         };
         crate::widgets::combo(ui, tr("Resolution"), size_label, |ui| {
-            ui.selectable_value(&mut app.ui.export_size, 0, tr("Graph's size"));
+            ui.selectable_value(&mut app.ui.export_size, 0, graph_size);
             for px in [256u32, 512, 1024, 2048, 4096, 8192] {
-                ui.selectable_value(&mut app.ui.export_size, px, format!("{px} x {px}"));
+                ui.selectable_value(&mut app.ui.export_size, px, format!("{px} px"));
             }
         });
         ui.horizontal(|ui| {

@@ -313,7 +313,7 @@ impl Session {
         &self.cooked
     }
 
-    /// Cook graph `gi` at full size (exports), without touching the preview results.
+    /// Cook graph `gi` at full size, without touching the preview results.
     pub fn cook_full(&self, gi: usize) -> Cooked {
         let dec = self.resource_decoder();
         let opts = Options::new(&dec);
