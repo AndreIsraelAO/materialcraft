@@ -56,9 +56,11 @@ if [[ "$PUSH" = 1 ]]; then
   echo "==> Pushing to $REGISTRY:$TAG"
   skopeo copy --format oci "${AUTH_ARGS[@]}" "oci:$OUT_OCI" "docker://$REGISTRY:$TAG"
 
-  # Also update architecture-specific stable tag
-  echo "==> Pushing to $REGISTRY:stable-$ARCH"
-  skopeo copy --format oci "${AUTH_ARGS[@]}" "oci:$OUT_OCI" "docker://$REGISTRY:stable-$ARCH"
+  # Only a stable release-branch build may move the stable tag.
+  if [[ "$VERSION" != *-* && "${GITHUB_REF:-}" == refs/heads/release ]]; then
+    echo "==> Pushing to $REGISTRY:stable-$ARCH"
+    skopeo copy --format oci "${AUTH_ARGS[@]}" "oci:$OUT_OCI" "docker://$REGISTRY:stable-$ARCH"
+  fi
 
   echo "==> Push complete"
 fi

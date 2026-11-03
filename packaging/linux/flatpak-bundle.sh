@@ -70,6 +70,7 @@ GPG_KEYS=()
 if [[ -n "${SIGNING_FPR:-}" ]]; then
   flatpak build-sign "$WORK/repo" "$APP_ID" stable --gpg-sign="$SIGNING_FPR" --gpg-homedir="${GNUPGHOME:?}"
   GPG_KEYS=(--gpg-keys="${SIGNING_PUBKEY:?}")
+  if [[ "${OCI_SIGNATURES_READY:-}" != 1 ]]; then OCI_REPO=""; fi
 fi
 # --runtime-repo lets `flatpak install` fetch the freedesktop runtime from Flathub if missing.
 # --repo-url makes the installed origin update from the ArtCraft OCI repository.
