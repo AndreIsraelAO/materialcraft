@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use materialcraft_geom::glam::{Vec2, Vec3};
 use materialcraft_geom::{Bvh, Mesh, OrbitCamera};
@@ -409,6 +410,14 @@ fn jitter(x: u32, y: u32) -> Vec2 {
 /// Render `w × h` pixels to sRGB RGBA8.
 pub fn render(scene: &Scene, maps: &Maps, light: &Lighting, s: &Settings, w: u32, h: u32) -> Vec<u8> {
     let (w, h) = (w.clamp(1, 4096), h.clamp(1, 4096));
+    render_cancellable(scene, maps, light, s, w, h, &AtomicBool::new(false)).unwrap_or_else(|| vec![0; (w * h * 4) as usize])
+}
+
+/// [`render`] that gives up once `cancel` is set (rows not yet started are skipped) and then
+/// returns `None`: a frame the viewer no longer needs (the camera moved, the view was resized)
+/// stops holding the CPU.
+pub fn render_cancellable(scene: &Scene, maps: &Maps, light: &Lighting, s: &Settings, w: u32, h: u32, cancel: &AtomicBool) -> Option<Vec<u8>> {
+    let (w, h) = (w.clamp(1, 4096), h.clamp(1, 4096));
     let cam = camera(scene, s);
     let aspect = w as f32 / h as f32;
     let ss = s.supersample.clamp(1, 4);
@@ -420,6 +429,9 @@ pub fn render(scene: &Scene, maps: &Maps, light: &Lighting, s: &Settings, w: u32
     let key = (right * -0.6 + right.cross(fwd) * 0.75 - fwd * 0.5).normalize_or_zero();
     let mut out = vec![0u8; (w * h * 4) as usize];
     out.par_chunks_mut(w as usize * 4).enumerate().for_each(|(y, row)| {
+        if cancel.load(Ordering::Relaxed) {
+            return;
+        }
         for x in 0..w as usize {
             let mut acc = Vec3::ZERO;
             for sy in 0..ss {
@@ -445,7 +457,7 @@ pub fn render(scene: &Scene, maps: &Maps, light: &Lighting, s: &Settings, w: u32
             }
         }
     });
-    out
+    if cancel.load(Ordering::Relaxed) { None } else { Some(out) }
 }
 
 #[cfg(test)]
@@ -470,6 +482,14 @@ mod tests {
             let c = if id == "torus" { ((24 * 64 + 20) * 4) as usize } else { ((24 * 64 + 32) * 4) as usize };
             assert!(px[c] > px[c + 1], "{id}: center is not red ({:?})", &px[c..c + 3]);
         }
+    }
+
+    #[test]
+    fn a_cancelled_render_gives_up_and_an_uncancelled_one_matches_render() {
+        let (scene, light, maps, s) = (Scene::builtin("sphere"), Lighting::new("studio"), Maps::default(), Settings::default());
+        assert!(render_cancellable(&scene, &maps, &light, &s, 32, 24, &AtomicBool::new(true)).is_none());
+        let px = render_cancellable(&scene, &maps, &light, &s, 32, 24, &AtomicBool::new(false));
+        assert_eq!(px, Some(render(&scene, &maps, &light, &s, 32, 24)));
     }
 
     #[test]

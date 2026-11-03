@@ -2,6 +2,16 @@
 //! `materialcraft-render` (one ray per pixel at half resolution while the camera moves, 2×2
 //! supersampled when it rests). Left-drag orbits, Alt+drag or middle-drag pans, the wheel zooms,
 //! Shift+drag turns the light and a double-click resets the camera.
+//!
+//! The full-quality frame waits until the view's size and the camera have rested for [`SETTLE`]
+//! (a panel, divider or window drag changes the size on every step), then renders on a worker
+//! thread so the UI never waits for it; until it lands the last frame stays up, kept in proportion.
+//! A frame that is no longer wanted is cancelled. The browser has no threads and renders here.
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, TryRecvError};
+use std::time::Duration;
 
 use egui::{Color32, ColorImage, Rect, Sense, TextureHandle, TextureOptions, Ui, pos2, vec2};
 use egui_phosphor::regular as icon;
@@ -13,17 +23,60 @@ use crate::MaterialCraftApp;
 use crate::i18n::tr;
 use crate::theme::Tokens;
 
+/// Seconds the view's size and the camera rest before the full-quality frame renders.
+pub const SETTLE: f64 = 0.15;
+
 #[derive(Default)]
 pub struct View3dState {
-    scene: Option<(String, Scene)>,
-    light: Option<Lighting>,
+    scene: Option<(String, Arc<Scene>)>,
+    light: Option<Arc<Lighting>>,
     tex: Option<TextureHandle>,
     /// What the texture shows: (content key, full quality).
     key: Option<(u64, bool)>,
+    /// The view size (points) the texture was rendered for.
+    tex_size: Option<(u32, u32)>,
+    /// The view size on the last frame.
+    size: Option<(u32, u32)>,
+    /// When the view's size or the camera last changed (app seconds).
+    changed_at: Option<f64>,
+    /// The full-quality frame rendering on a worker thread.
+    job: Option<Job>,
     pub render_ms: f32,
+    /// Frames rendered so far (previews and full quality).
+    pub renders: u64,
     /// The last frame shown (RGBA8, for `view.screenshot`).
     pub shown: Option<(u32, u32, Vec<u8>)>,
     show_env: bool,
+}
+
+impl View3dState {
+    /// A full-quality frame is rendering in the background.
+    pub fn busy(&self) -> bool {
+        self.job.is_some()
+    }
+}
+
+/// A rendered frame: RGBA8 pixels and how long they took.
+struct Frame {
+    w: u32,
+    h: u32,
+    px: Vec<u8>,
+    ms: f32,
+}
+
+/// A full-quality frame rendering on a worker thread. Dropping it cancels the render.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+struct Job {
+    key: u64,
+    size: (u32, u32),
+    cancel: Arc<AtomicBool>,
+    rx: Receiver<Option<Frame>>,
+}
+
+impl Drop for Job {
+    fn drop(&mut self) {
+        self.cancel.store(true, Ordering::Relaxed);
+    }
 }
 
 pub fn scene_label(app: &MaterialCraftApp) -> String {
@@ -146,7 +199,7 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, Color32::from_rgb(0x1b, 0x1c, 0x1e));
     if let Some(t) = &app.view3d.tex {
-        p.image(t.id(), rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+        p.image(t.id(), frame_rect(rect, app.view3d.tex_size), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
     }
     if app.session.material_maps().is_empty() {
         p.text(
@@ -188,6 +241,22 @@ fn scene_label_custom(app: &MaterialCraftApp) -> String {
     app.session.custom_mesh.as_ref().map_or_else(String::new, |(n, _)| n.clone())
 }
 
+/// The view's size in whole points: part of the content key and of `tex_size`.
+fn view_size(rect: Rect) -> (u32, u32) {
+    (rect.width() as u32, rect.height() as u32)
+}
+
+/// Where the last frame goes in `rect`: all of it when it was rendered for this size, otherwise
+/// at the view's height and centred. The camera's field of view is vertical, so that is what a
+/// new render will show (cropped, or with bars at the sides) while a resize is in progress,
+/// instead of a stretched picture.
+fn frame_rect(rect: Rect, rendered: Option<(u32, u32)>) -> Rect {
+    match rendered {
+        Some((w, h)) if h > 0 && (w, h) != view_size(rect) => Rect::from_center_size(rect.center(), vec2(rect.height() * w as f32 / h as f32, rect.height())),
+        _ => rect,
+    }
+}
+
 fn content_key(app: &MaterialCraftApp, w: u32, h: u32, show_env: bool) -> u64 {
     use std::hash::{DefaultHasher, Hash, Hasher};
     let mut hs = DefaultHasher::new();
@@ -204,15 +273,57 @@ fn content_key(app: &MaterialCraftApp, w: u32, h: u32, show_env: bool) -> u64 {
     hs.finish()
 }
 
+/// Keep the 3D view's texture up to date: a quick frame right away while the camera moves, the
+/// full-quality one once the view's size and the camera have rested for [`SETTLE`].
 fn render(app: &mut MaterialCraftApp, ctx: &egui::Context, rect: Rect, moving: bool) {
-    let ppp = ctx.pixels_per_point();
-    let full = !moving;
-    let scale = if full { ppp } else { ppp * 0.5 };
-    let (w, h) = (((rect.width() * scale) as u32).clamp(16, 4096), ((rect.height() * scale) as u32).clamp(16, 4096));
-    let key = content_key(app, rect.width() as u32, rect.height() as u32, app.view3d.show_env);
-    if app.view3d.key == Some((key, true)) || (!full && app.view3d.key == Some((key, false))) {
+    let now = ctx.input(|i| i.time);
+    let size = view_size(rect);
+    if moving || app.view3d.size.is_some_and(|s| s != size) {
+        app.view3d.changed_at = Some(now);
+    }
+    app.view3d.size = Some(size);
+    let key = content_key(app, size.0, size.1, app.view3d.show_env);
+    collect(app, ctx, key);
+    if app.view3d.key == Some((key, true)) || (moving && app.view3d.key == Some((key, false))) {
         return;
     }
+    let ppp = ctx.pixels_per_point();
+    if moving {
+        // One ray per pixel at half resolution, here: the camera follows the pointer.
+        if let Some(frame) = render_now(app, rect, ppp * 0.5, 1) {
+            show_frame(app, ctx, frame, key, false, size);
+        }
+        ctx.request_repaint_after(Duration::from_secs_f64(SETTLE));
+        return;
+    }
+    let wait = app.view3d.changed_at.map_or(0.0, |t| SETTLE - (now - t));
+    if wait > 0.0 {
+        // Mid-resize or the camera just stopped: the last frame stays up (see `frame_rect`).
+        ctx.request_repaint_after(Duration::from_secs_f64(wait.min(SETTLE)));
+        return;
+    }
+    if app.view3d.job.as_ref().is_some_and(|j| j.key == key) {
+        return;
+    }
+    start_full(app, ctx, rect, key, size);
+}
+
+/// Show a finished full-quality frame if it is still the one wanted; drop (and so cancel) one
+/// that is not.
+fn collect(app: &mut MaterialCraftApp, ctx: &egui::Context, key: u64) {
+    let Some(job) = app.view3d.job.take() else { return };
+    if job.key != key {
+        return;
+    }
+    match job.rx.try_recv() {
+        Ok(Some(frame)) => show_frame(app, ctx, frame, key, true, job.size),
+        Ok(None) | Err(TryRecvError::Disconnected) => {}
+        Err(TryRecvError::Empty) => app.view3d.job = Some(job),
+    }
+}
+
+/// The scene, lighting, maps and settings of the current view (scene and lighting are cached).
+fn inputs(app: &mut MaterialCraftApp, supersample: u32) -> Option<(Arc<Scene>, Arc<Lighting>, Maps, Settings)> {
     let v = app.session.view3d.clone();
     let scene_key = match (&*v.scene, &app.session.custom_mesh) {
         ("custom", Some((name, _))) => format!("custom:{name}"),
@@ -223,10 +334,10 @@ fn render(app: &mut MaterialCraftApp, ctx: &egui::Context, rect: Rect, moving: b
             ("custom", Some((_, mesh))) => Scene::new((**mesh).clone()),
             _ => Scene::builtin(&v.scene),
         };
-        app.view3d.scene = Some((scene_key, scene));
+        app.view3d.scene = Some((scene_key, Arc::new(scene)));
     }
     if app.view3d.light.as_ref().is_none_or(|l| l.name != v.environment) {
-        app.view3d.light = Some(Lighting::new(&v.environment));
+        app.view3d.light = Some(Arc::new(Lighting::new(&v.environment)));
     }
     let settings = Settings {
         yaw: v.yaw,
@@ -238,23 +349,89 @@ fn render(app: &mut MaterialCraftApp, ctx: &egui::Context, rect: Rect, moving: b
         env_rotation: v.env_rotation,
         height_scale: v.height_scale,
         show_env: app.view3d.show_env,
-        supersample: if full { 2 } else { 1 },
+        supersample,
         ..Settings::default()
     };
     let maps = Maps::from_usages(app.session.material_maps());
-    let (Some((_, scene)), Some(light)) = (&app.view3d.scene, &app.view3d.light) else { return };
+    let (Some((_, scene)), Some(light)) = (&app.view3d.scene, &app.view3d.light) else { return None };
+    Some((scene.clone(), light.clone(), maps, settings))
+}
+
+/// Texture pixels for `rect` at `scale` pixels per point.
+fn pixels(rect: Rect, scale: f32) -> (u32, u32) {
+    (((rect.width() * scale) as u32).clamp(16, 4096), ((rect.height() * scale) as u32).clamp(16, 4096))
+}
+
+/// Render a frame on this thread.
+fn render_now(app: &mut MaterialCraftApp, rect: Rect, scale: f32, supersample: u32) -> Option<Frame> {
+    let (scene, light, maps, settings) = inputs(app, supersample)?;
+    let (w, h) = pixels(rect, scale);
     let t0 = crate::now_ms();
-    let px = materialcraft_render::render(scene, &maps, light, &settings, w, h);
-    app.view3d.render_ms = (crate::now_ms() - t0) as f32;
-    let img = ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &px);
-    match &mut app.view3d.tex {
-        Some(t) => t.set(img, TextureOptions::LINEAR),
-        None => app.view3d.tex = Some(ctx.load_texture("view3d", img, TextureOptions::LINEAR)),
+    let px = materialcraft_render::render(&scene, &maps, &light, &settings, w, h);
+    Some(Frame { w, h, px, ms: (crate::now_ms() - t0) as f32 })
+}
+
+/// Start the full-quality frame (2×2 supersampled, full resolution) on a worker thread.
+#[cfg(not(target_arch = "wasm32"))]
+fn start_full(app: &mut MaterialCraftApp, ctx: &egui::Context, rect: Rect, key: u64, size: (u32, u32)) {
+    let Some((scene, light, maps, settings)) = inputs(app, 2) else { return };
+    let (w, h) = pixels(rect, ctx.pixels_per_point());
+    let cancel = Arc::new(AtomicBool::new(false));
+    let (tx, rx) = std::sync::mpsc::channel();
+    let (stop, repaint, viewport) = (cancel.clone(), ctx.clone(), ctx.viewport_id());
+    let spawned = std::thread::Builder::new().name("materialcraft-view3d".into()).spawn(move || {
+        let t0 = crate::now_ms();
+        let px = materialcraft_render::render_cancellable(&scene, &maps, &light, &settings, w, h, &stop);
+        let _ = tx.send(px.map(|px| Frame { w, h, px, ms: (crate::now_ms() - t0) as f32 }));
+        repaint.request_repaint_of(viewport);
+    });
+    match spawned {
+        Ok(_) => app.view3d.job = Some(Job { key, size, cancel, rx }),
+        Err(e) => {
+            log::warn!("could not start a 3D view render thread ({e}); rendering here");
+            if let Some(frame) = render_now(app, rect, ctx.pixels_per_point(), 2) {
+                show_frame(app, ctx, frame, key, true, size);
+            }
+        }
     }
-    app.view3d.shown = Some((w, h, px));
-    app.view3d.key = Some((key, full));
-    if !full {
-        // Come back for the full-quality frame once the camera rests.
-        ctx.request_repaint_after(std::time::Duration::from_millis(120));
+}
+
+/// The browser has no threads: the full-quality frame renders here (the page pauses).
+#[cfg(target_arch = "wasm32")]
+fn start_full(app: &mut MaterialCraftApp, ctx: &egui::Context, rect: Rect, key: u64, size: (u32, u32)) {
+    if let Some(frame) = render_now(app, rect, ctx.pixels_per_point(), 2) {
+        show_frame(app, ctx, frame, key, true, size);
+    }
+}
+
+/// Upload a frame and remember what it shows.
+fn show_frame(app: &mut MaterialCraftApp, ctx: &egui::Context, frame: Frame, key: u64, full: bool, size: (u32, u32)) {
+    let st = &mut app.view3d;
+    let img = ColorImage::from_rgba_unmultiplied([frame.w as usize, frame.h as usize], &frame.px);
+    match &mut st.tex {
+        Some(t) => t.set(img, TextureOptions::LINEAR),
+        None => st.tex = Some(ctx.load_texture("view3d", img, TextureOptions::LINEAR)),
+    }
+    st.render_ms = frame.ms;
+    st.renders += 1;
+    st.shown = Some((frame.w, frame.h, frame.px));
+    st.key = Some((key, full));
+    st.tex_size = Some(size);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_frame_for_another_size_keeps_its_proportions() {
+        let rect = Rect::from_min_size(pos2(10.0, 20.0), vec2(400.0, 200.0));
+        assert_eq!(frame_rect(rect, None), rect);
+        assert_eq!(frame_rect(rect, Some((400, 200))), rect);
+        // Rendered narrower (the view was widened): full height, centred, bars at the sides.
+        let r = frame_rect(rect, Some((300, 200)));
+        assert_eq!((r.width(), r.height(), r.center()), (300.0, 200.0, rect.center()));
+        // A degenerate size never divides by zero.
+        assert_eq!(frame_rect(rect, Some((300, 0))), rect);
     }
 }
