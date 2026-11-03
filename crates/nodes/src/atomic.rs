@@ -425,6 +425,8 @@ fn hsl(ctx: &Ctx) -> CookResult {
 pub fn levels_fn(v: f32, in_low: f32, in_mid: f32, in_high: f32, out_low: f32, out_high: f32) -> f32 {
     let span = in_high - in_low;
     let t = if span.abs() < 1e-6 { if v >= in_high { 1.0 } else { 0.0 } } else { ((v - in_low) / span).clamp(0.0, 1.0) };
+    // NaN (from an input or a hostile parameter) would otherwise spread through the graph.
+    let t = if t.is_finite() { t } else { 0.0 };
     let mid = in_mid.clamp(0.001, 0.999);
     let g = 0.5f32.ln() / mid.ln();
     out_low + t.powf(g) * (out_high - out_low)
@@ -520,5 +522,34 @@ pub fn output_kind(def: &NodeDef, port: usize, inputs: &[Option<Image>]) -> Kind
         Some(PortKind::Gray) => Kind::Gray,
         Some(PortKind::Color) => Kind::Color,
         _ => inputs.iter().flatten().next().map_or(Kind::Gray, |i| i.kind),
+    }
+}
+
+#[cfg(test)]
+mod levels_tests {
+    use super::levels_fn;
+
+    #[test]
+    fn levels_remaps_the_input_range_midtones_and_output_range() {
+        let close = |a: f32, b: f32| (a - b).abs() < 1e-5;
+        // Identity by default.
+        for v in [0.0, 0.25, 0.5, 1.0] {
+            assert!(close(levels_fn(v, 0.0, 0.5, 1.0, 0.0, 1.0), v));
+        }
+        // The input range stretches and clips.
+        assert!(close(levels_fn(0.4, 0.2, 0.5, 0.6, 0.0, 1.0), 0.5));
+        assert!(close(levels_fn(0.1, 0.2, 0.5, 0.6, 0.0, 1.0), 0.0));
+        assert!(close(levels_fn(0.9, 0.2, 0.5, 0.6, 0.0, 1.0), 1.0));
+        // Mid is relative to the input range: the value there becomes 0.5.
+        assert!(close(levels_fn(0.25, 0.0, 0.25, 1.0, 0.0, 1.0), 0.5));
+        assert!(close(levels_fn(0.3, 0.2, 0.25, 0.6, 0.0, 1.0), 0.5));
+        // The output range, inverted when low > high.
+        assert!(close(levels_fn(0.5, 0.0, 0.5, 1.0, 0.2, 0.6), 0.4));
+        assert!(close(levels_fn(0.0, 0.0, 0.5, 1.0, 1.0, 0.0), 1.0));
+        // A collapsed input range is a threshold; NaN never escapes.
+        assert_eq!(levels_fn(0.49, 0.5, 0.5, 0.5, 0.0, 1.0), 0.0);
+        assert_eq!(levels_fn(0.5, 0.5, 0.5, 0.5, 0.0, 1.0), 1.0);
+        assert!(levels_fn(f32::NAN, 0.0, 0.5, 1.0, 0.0, 1.0).is_finite());
+        assert!(levels_fn(0.5, f32::NAN, 0.5, f32::NAN, 0.0, 1.0).is_finite());
     }
 }

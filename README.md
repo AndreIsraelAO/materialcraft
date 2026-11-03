@@ -172,7 +172,8 @@ area, the remaining work and what's next.
 SVG and Text, noises including tileable 3D ones, patterns, filters, the flood fill family,
 whole-material blending and weathering), function graphs with a visual editor and dynamic
 parameters, sub-graphs with exposed inputs and presets, the full editor (graph, library,
-properties, 2D view with histogram, 3D view with your own OBJ/glTF meshes), `.mcraft` packages,
+properties, 2D view with histogram, 3D view with your own OBJ/glTF meshes, a Levels editor over
+the input histogram, see [docs/levels-editor.md](docs/levels-editor.md)), `.mcraft` packages,
 texture export, portable `.mcmat` materials that TextureCraft paints with (inputs stay editable
 there), the browser build with file I/O, the CLI, the control channel and the MCP server
 all work today. We estimate about two thirds (≈ 67%) of a material artist's daily workflow works
