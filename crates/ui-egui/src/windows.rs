@@ -341,7 +341,7 @@ fn shortcuts(app: &mut MaterialCraftApp, ctx: &egui::Context) {
                     ui.end_row();
                 }
                 for (k, what) in [
-                    ("Space", "Node search (over the graph)"),
+                    ("Space / Tab", "Node search (over the graph)"),
                     ("F", "Frame all / the selection"),
                     ("Wheel", "Zoom the graph and the views"),
                     ("Middle drag / Alt+drag", "Pan the graph"),

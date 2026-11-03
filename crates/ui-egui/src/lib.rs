@@ -244,6 +244,8 @@ impl MaterialCraftApp {
         }
         let ctx = ui.ctx().clone();
         let t0 = now_ms();
+        // Tab can focus a menu or toolbar button while drawing; preserve keyboard ownership.
+        self.graph.keyboard_was_focused = ctx.egui_wants_keyboard_input();
         menus::menu_bar(self, ui);
         toolbar::main_toolbar(self, ui);
         toolbar::status_bar(self, ui);
