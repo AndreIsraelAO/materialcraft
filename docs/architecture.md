@@ -62,13 +62,14 @@ drag) into one undo step. See [control-protocol.md](control-protocol.md).
 through `ui.inspect` / `ui.set`). The dock (craft-ui) hosts eight panels around the protected graph
 panel. The graph editor lays nodes out in graph space, draws cards with thumbnails from the cook
 results (uploaded once per cache key), wires as cubic beziers between typed ports, and turns
-gestures into commands only when they complete. The properties panel builds every parameter
-editor from the catalog; the Levels node adds a histogram editor on top
-([levels-editor.md](levels-editor.md)). The 3D view renders with `materialcraft-render`
+gestures into commands only when they complete. The 3D view renders with `materialcraft-render`
 on the CPU: half resolution while the camera moves, 2×2 supersampled when it rests.
 
 `crates/ui-egui/tests/snapshot.rs` renders the real UI offscreen with egui_kittest + wgpu for visual
 checks and README screenshots.
+
+The properties panel builds every parameter editor from the node catalog; the Levels node adds a
+histogram editor with range handles on top of its sliders ([levels-editor.md](levels-editor.md)).
 
 ## Files
 
