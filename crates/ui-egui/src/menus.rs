@@ -252,11 +252,13 @@ pub fn shortcuts(app: &mut MaterialCraftApp, ctx: &egui::Context) {
     if !ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Key { pressed: true, .. }))) {
         return;
     }
-    // A selected wire takes Delete and Backspace before the node commands do.
-    if app.graph.selected_wire.is_some()
-        && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Delete) | i.consume_key(egui::Modifiers::NONE, egui::Key::Backspace))
-    {
-        crate::graph_view::delete_selected_wire(app);
+    // Selected wires take Delete and Backspace before the node commands do, and X swaps them.
+    if !app.graph.selected_wires.is_empty() {
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Delete) | i.consume_key(egui::Modifiers::NONE, egui::Key::Backspace)) {
+            crate::graph_view::delete_selected_wires(app);
+        } else if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::X)) {
+            crate::graph_view::swap_selected_wires(app);
+        }
     }
     let mut table: Vec<(&'static str, KeyboardShortcut)> = CATALOG.iter().filter_map(|i| Some((i.id, parse_shortcut(i.shortcut?)?))).collect();
     for c in materialcraft_engine::command_specs() {

@@ -6,8 +6,9 @@
 //! it, drag the empty canvas to box-select (Ctrl adds), middle-drag or Alt+drag to pan, wheel to
 //! zoom, double-click a node to show it in the 2D view (a graph instance opens its graph), Space, Tab or
 //! double-click the canvas for the node search, right-click for menus, drop library items to add
-//! them. Click a wire to select it (Delete removes it), drag a wire to pull a reroute dot out of
-//! it, double-click a wire to drop a dot there, right-click a wire for its menu. Every edit is an
+//! them. Click a wire to select it (Shift or Ctrl+click adds more; Delete removes them, X swaps
+//! where they come from), drag a wire to pull a reroute dot out of it, double-click a wire to drop
+//! a dot there, right-click a wire for its menu. Every edit is an
 //! engine command; the gestures only draw previews until they commit.
 
 use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
@@ -104,8 +105,8 @@ pub struct GraphView {
     menu_at: Pos2,
     /// The graph the camera last framed.
     framed_graph: Option<usize>,
-    /// The selected wire (Delete removes it).
-    pub selected_wire: Option<WireRef>,
+    /// The selected wires, in the order they were picked (Delete removes them, X swaps them).
+    pub selected_wires: Vec<WireRef>,
     /// The wire the context menu is for (right-clicked on a wire).
     menu_wire: Option<WireRef>,
     /// Wires on screen last frame: the wire and its bezier control points.
@@ -124,7 +125,7 @@ impl Default for GraphView {
             view: Rect::NOTHING,
             menu_at: Pos2::ZERO,
             framed_graph: None,
-            selected_wire: None,
+            selected_wires: Vec::new(),
             menu_wire: None,
             wires: Vec::new(),
         }
@@ -407,7 +408,7 @@ fn canvas(app: &mut MaterialCraftApp, ui: &mut Ui) {
     if app.ui.frame_all || app.graph.framed_graph != Some(app.session.graph) {
         app.ui.frame_all = false;
         app.graph.framed_graph = Some(app.session.graph);
-        app.graph.selected_wire = None;
+        app.graph.selected_wires.clear();
         frame(app, rect, false);
     }
     let painter = ui.painter_at(rect);
@@ -557,7 +558,7 @@ fn canvas(app: &mut MaterialCraftApp, ui: &mut Ui) {
     for (w, ctrl) in &wires {
         let Some(c) = g.input_of(w.0, &w.1) else { continue };
         let hot = selection.contains(&c.from) || selection.contains(&c.to);
-        let picked = app.graph.selected_wire.as_ref() == Some(w);
+        let picked = app.graph.selected_wires.contains(w);
         let hovered = wire_hover.as_ref() == Some(w);
         let base = (2.0 * cam.zoom).clamp(1.0, 3.0);
         let stroke = if picked {
@@ -796,10 +797,13 @@ fn handle_input(
         if middle_down || (primary_pressed && mods.alt) {
             app.graph.drag = Some(Drag::Pan);
         } else if primary_pressed {
-            // Any press other than on a wire drops the wire selection.
-            app.graph.selected_wire = None;
             let on_card = nodes.iter().any(|(_, r)| r.rect.contains(p)) || comments.iter().any(|(_, r)| r.contains(p));
-            if let Some(w) = wire_hover.as_ref().filter(|_| port_hover.is_none() && !on_card) {
+            let wire = wire_hover.as_ref().filter(|_| port_hover.is_none() && !on_card);
+            // Any press other than on a wire drops the wire selection.
+            if wire.is_none() {
+                app.graph.selected_wires.clear();
+            }
+            if let Some(w) = wire {
                 app.graph.drag = Some(Drag::WirePress { wire: w.clone(), start: p });
             } else if let Some(h) = &port_hover {
                 if h.output {
@@ -870,7 +874,17 @@ fn handle_input(
             Drag::Pan => {}
             Drag::WirePress { wire, .. } => {
                 app.session.selection.clear();
-                app.graph.selected_wire = Some(wire);
+                let sel = &mut app.graph.selected_wires;
+                if mods.ctrl && sel.contains(&wire) {
+                    // Ctrl+click toggles a wire out of the selection.
+                    sel.retain(|w| *w != wire);
+                } else if mods.ctrl || mods.shift {
+                    if !sel.contains(&wire) {
+                        sel.push(wire);
+                    }
+                } else {
+                    *sel = vec![wire];
+                }
             }
             Drag::Nodes { delta } => {
                 if delta.length() > 0.5 {
@@ -985,7 +999,7 @@ fn handle_input(
             Some(w) => {
                 let at = cam.to_graph(p);
                 app.run("graph.wire.insertDot", json!({"to": w.0.0, "toPort": w.1, "at": [at.x, at.y]}));
-                app.graph.selected_wire = None;
+                app.graph.selected_wires.clear();
             }
             None => open_search(app, cam.to_graph(p), None),
         }
@@ -995,9 +1009,12 @@ fn handle_input(
     {
         app.graph.menu_at = cam.to_graph(p);
         app.graph.menu_wire = wire_hover.clone().filter(|_| !on_node);
-        if let Some(w) = &app.graph.menu_wire {
+        // Right-clicking a selected wire keeps the selection (to swap or delete them all).
+        if let Some(w) = &app.graph.menu_wire
+            && !app.graph.selected_wires.contains(w)
+        {
             app.session.selection.clear();
-            app.graph.selected_wire = Some(w.clone());
+            app.graph.selected_wires = vec![w.clone()];
         }
     }
     let at = app.graph.menu_at;
@@ -1175,22 +1192,51 @@ fn node_menu(app: &mut MaterialCraftApp, ui: &mut Ui, id: NodeId) {
     item(ui, "Create graph from selection", "graph.createFromSelection", json!({}));
 }
 
-/// Delete the selected wire (the Delete and Backspace keys); `false` when none is selected.
-pub fn delete_selected_wire(app: &mut MaterialCraftApp) -> bool {
-    let Some((to, port)) = app.graph.selected_wire.take() else { return false };
-    app.run("graph.disconnect", json!({"to": to.0, "toPort": port}));
+/// `wires` as the `{wires: [{to, toPort}, ...]}` parameter of the wire commands.
+fn wires_json(wires: &[WireRef]) -> serde_json::Value {
+    json!({"wires": wires.iter().map(|(to, port)| json!({"to": to.0, "toPort": port})).collect::<Vec<_>>()})
+}
+
+/// Delete the selected wires in one undo step (the Delete and Backspace keys); `false` when none
+/// is selected.
+pub fn delete_selected_wires(app: &mut MaterialCraftApp) -> bool {
+    let wires = std::mem::take(&mut app.graph.selected_wires);
+    if wires.is_empty() {
+        return false;
+    }
+    app.run("graph.wire.delete", wires_json(&wires));
+    true
+}
+
+/// Swap where the selected wires come from (the X key): two wires trade sources, more reverse
+/// them in input order. The wires stay selected, so X again swaps back. `false` when no wire is
+/// selected.
+pub fn swap_selected_wires(app: &mut MaterialCraftApp) -> bool {
+    if app.graph.selected_wires.is_empty() {
+        return false;
+    }
+    let params = wires_json(&app.graph.selected_wires);
+    app.run("graph.wire.swap", params);
     true
 }
 
 fn wire_menu(app: &mut MaterialCraftApp, ui: &mut Ui, (to, port): WireRef, at: Pos2) {
+    let n = app.graph.selected_wires.len();
     if ui.button(format!("{}  {}", icon::DOT_OUTLINE, tr("Insert reroute dot"))).clicked() {
         app.run("graph.wire.insertDot", json!({"to": to.0, "toPort": port, "at": [at.x, at.y]}));
-        app.graph.selected_wire = None;
+        app.graph.selected_wires.clear();
         ui.close();
     }
-    if ui.button(format!("{}  {}", icon::TRASH, tr("Delete link"))).clicked() {
-        app.graph.selected_wire = Some((to, port));
-        delete_selected_wire(app);
+    if n >= 2 && ui.button(format!("{}  {}  (X)", icon::ARROWS_LEFT_RIGHT, tr("Swap selected links"))).clicked() {
+        swap_selected_wires(app);
+        ui.close();
+    }
+    let label = if n >= 2 { tr("Delete selected links") } else { tr("Delete link") };
+    if ui.button(format!("{}  {label}", icon::TRASH)).clicked() {
+        if n < 2 {
+            app.graph.selected_wires = vec![(to, port)];
+        }
+        delete_selected_wires(app);
         ui.close();
     }
 }
@@ -1287,6 +1333,55 @@ mod tests {
         .textures_delta
         .clear();
         assert!(app.graph.search.is_some());
+    }
+
+    #[test]
+    fn clicked_wires_swap_with_x_and_delete_together() {
+        let mut app = MaterialCraftApp::headless(materialcraft_engine::sample_session(), crate::UiState::default());
+        app.run("file.new", json!({"template": "empty"}));
+        let id = |v: Option<serde_json::Value>| v.and_then(|v| v["id"].as_u64()).unwrap();
+        let a = id(app.run("graph.node.add", json!({"def": "clouds_1", "at": [0, -150]})));
+        let b = id(app.run("graph.node.add", json!({"def": "checker", "at": [0, 150]})));
+        let blend = id(app.run("graph.node.add", json!({"def": "blend", "at": [450, 0]})));
+        app.run("graph.connect", json!({"from": a, "to": blend, "toPort": "foreground"}));
+        app.run("graph.connect", json!({"from": b, "to": blend, "toPort": "background"}));
+        let ctx = egui::Context::default();
+        let mut frame = |app: &mut MaterialCraftApp, mut events: Vec<egui::Event>, modifiers: egui::Modifiers| {
+            events.insert(0, egui::Event::ModifiersChanged(modifiers));
+            let input = egui::RawInput { events, ..Default::default() };
+            ctx.run_ui(input, |ui| {
+                app.step(&ui.ctx().clone());
+                app.draw(ui);
+            })
+            .textures_delta
+            .clear();
+        };
+        for _ in 0..3 {
+            frame(&mut app, Vec::new(), egui::Modifiers::NONE);
+        }
+        let mid =
+            |app: &MaterialCraftApp, port: &str| app.graph.wires.iter().find(|(w, _)| w.0.0 == blend && w.1 == port).map(|(_, c)| bezier_at(c, 0.5)).unwrap();
+        let click =
+            |app: &mut MaterialCraftApp, frame: &mut dyn FnMut(&mut MaterialCraftApp, Vec<egui::Event>, egui::Modifiers), port: &str, m: egui::Modifiers| {
+                let p = mid(app, port);
+                let button = |pressed| egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: m };
+                frame(app, vec![egui::Event::PointerMoved(p)], m);
+                frame(app, vec![button(true)], m);
+                frame(app, vec![button(false)], m);
+            };
+        click(&mut app, &mut frame, "foreground", egui::Modifiers::NONE);
+        click(&mut app, &mut frame, "background", egui::Modifiers::SHIFT);
+        assert_eq!(app.graph.selected_wires.len(), 2, "{:?}", app.graph.selected_wires);
+        let key = |k| egui::Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
+        let src = |app: &MaterialCraftApp, port: &str| app.session.graph().unwrap().input_of(NodeId(blend), port).unwrap().from.0;
+        frame(&mut app, vec![key(egui::Key::X)], egui::Modifiers::NONE);
+        assert_eq!((src(&app, "foreground"), src(&app, "background")), (b, a));
+        // Still selected: X again swaps back.
+        frame(&mut app, vec![key(egui::Key::X)], egui::Modifiers::NONE);
+        assert_eq!((src(&app, "foreground"), src(&app, "background")), (a, b));
+        frame(&mut app, vec![key(egui::Key::Delete)], egui::Modifiers::NONE);
+        assert!(app.session.graph().unwrap().connections.is_empty());
+        assert!(app.graph.selected_wires.is_empty());
     }
 
     #[test]

@@ -173,7 +173,7 @@ SVG and Text, noises including tileable 3D ones, patterns, filters, the flood fi
 whole-material blending and weathering), function graphs with a visual editor and dynamic
 parameters, sub-graphs with exposed inputs and presets, the full editor (graph, library,
 properties, 2D view with histogram, 3D view with your own OBJ/glTF meshes, alpha transparency and an
-alpha channel view; wires you can select, delete and reroute with dots, see
+alpha channel view; wires you can select, delete, swap (X) and reroute with dots, see
 [docs/wires-and-alpha.md](docs/wires-and-alpha.md)), `.mcraft` packages,
 texture export, portable `.mcmat` materials that TextureCraft paints with (inputs stay editable
 there), the browser build with file I/O, the CLI, the control channel and the MCP server

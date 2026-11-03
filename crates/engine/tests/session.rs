@@ -234,3 +234,54 @@ fn every_template_is_opaque_in_the_3d_view() {
         }
     }
 }
+
+#[test]
+fn selected_wires_swap_their_sources_and_delete_together() {
+    use materialcraft_engine::core::NodeId;
+    let mut s = sample_session();
+    run(&mut s, "file.new", json!({"template": "empty"}));
+    let a = run(&mut s, "graph.node.add", json!({"def": "clouds_1", "at": [0, 0]}))["id"].as_u64().unwrap();
+    let b = run(&mut s, "graph.node.add", json!({"def": "perlin_noise", "at": [0, 200]}))["id"].as_u64().unwrap();
+    let m = run(&mut s, "graph.node.add", json!({"def": "checker", "at": [0, 400]}))["id"].as_u64().unwrap();
+    let blend = run(&mut s, "graph.node.add", json!({"def": "blend", "at": [300, 100]}))["id"].as_u64().unwrap();
+    run(&mut s, "graph.connect", json!({"from": a, "to": blend, "toPort": "foreground"}));
+    run(&mut s, "graph.connect", json!({"from": b, "to": blend, "toPort": "background"}));
+    run(&mut s, "graph.connect", json!({"from": m, "to": blend, "toPort": "mask"}));
+    let src = |s: &Session, port: &str| s.graph().unwrap().input_of(NodeId(blend), port).unwrap().from.0;
+    let fg_bg = json!({"wires": [{"to": blend, "toPort": "background"}, {"to": blend, "toPort": "foreground"}]});
+    // Two wires swap, whatever order they are listed in; the other input is left alone.
+    run(&mut s, "graph.wire.swap", fg_bg.clone());
+    assert_eq!((src(&s, "foreground"), src(&s, "background"), src(&s, "mask")), (b, a, m));
+    run(&mut s, "graph.wire.swap", fg_bg.clone());
+    assert_eq!((src(&s, "foreground"), src(&s, "background")), (a, b));
+    // Three wires reverse in input order: foreground <-> mask, background stays.
+    let all = json!({"wires": [{"to": blend, "toPort": "foreground"}, {"to": blend, "toPort": "background"}, {"to": blend, "toPort": "mask"}]});
+    run(&mut s, "graph.wire.swap", all.clone());
+    assert_eq!((src(&s, "foreground"), src(&s, "background"), src(&s, "mask")), (m, b, a));
+    // One undo step each.
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!((src(&s, "foreground"), src(&s, "background"), src(&s, "mask")), (a, b, m));
+    // Bad requests change nothing.
+    for bad in [
+        json!({}),
+        json!({"wires": [{"to": blend, "toPort": "foreground"}]}),
+        json!({"wires": [{"to": blend, "toPort": "foreground"}, {"to": blend, "toPort": "foreground"}]}),
+        json!({"wires": [{"to": blend, "toPort": "foreground"}, {"to": a, "toPort": "input"}]}),
+    ] {
+        assert!(execute(&mut s, "graph.wire.swap", &bad).is_err(), "{bad}");
+    }
+    assert_eq!(src(&s, "foreground"), a);
+    // A swap that would make a cycle is refused and rolled back: blend -> levels, then swap the
+    // wire into levels with the wire into blend's foreground.
+    let lv = run(&mut s, "graph.node.add", json!({"def": "levels", "at": [600, 100]}))["id"].as_u64().unwrap();
+    run(&mut s, "graph.connect", json!({"from": blend, "to": lv}));
+    let cyc = json!({"wires": [{"to": blend, "toPort": "foreground"}, {"to": lv, "toPort": "input"}]});
+    assert!(execute(&mut s, "graph.wire.swap", &cyc).is_err());
+    assert_eq!(src(&s, "foreground"), a);
+    assert_eq!(s.graph().unwrap().connections.len(), 4);
+    // Deleting several wires is one step.
+    run(&mut s, "graph.wire.delete", all);
+    assert_eq!(s.graph().unwrap().connections.len(), 1);
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(s.graph().unwrap().connections.len(), 4);
+}

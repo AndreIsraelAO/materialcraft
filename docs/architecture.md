@@ -63,7 +63,7 @@ drag) into one undo step. See [control-protocol.md](control-protocol.md).
 through `ui.inspect` / `ui.set`). The dock (craft-ui) hosts eight panels around the protected graph
 panel. The graph editor lays nodes out in graph space, draws cards with thumbnails from the cook
 results (uploaded once per cache key), wires as cubic beziers between typed ports (hit-tested
-against the curve, so a wire can be selected, deleted or split with a reroute dot), and turns
+against the curve, so wires can be selected, deleted, swapped or split with a reroute dot), and turns
 gestures into commands only when they complete. See [wires-and-alpha.md](wires-and-alpha.md). The 3D view renders with `materialcraft-render`
 on the CPU: half resolution while the camera moves, 2×2 supersampled when it rests.
 

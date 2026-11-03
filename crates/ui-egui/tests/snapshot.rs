@@ -73,7 +73,7 @@ fn snapshots() {
         .unwrap();
     h.state_mut().run("graph.wire.insertDot", json!({"to": out, "toPort": "input", "at": [210, -330]}));
     let wire = h.state().session.graph().unwrap().connections.iter().find(|c| c.to.0 != out).map(|c| (c.to, c.to_port.clone()));
-    h.state_mut().graph.selected_wire = wire;
+    h.state_mut().graph.selected_wires = wire.into_iter().collect();
     h.state_mut().run("view.3d", json!({"scene": "sphere"}));
     h.state_mut().ui.frame_all = true;
     settle(&mut h, 60);
