@@ -198,7 +198,7 @@ mod web {
     /// Export outputs: one file downloads as is, several as `<graph>_outputs.zip`.
     pub fn export(app: &mut MaterialCraftApp, params: &serde_json::Value) {
         let result = materialcraft_engine::file_cmds::export_params(&app.session, params)
-            .and_then(|(gi, ext, pattern, depth)| materialcraft_engine::file_cmds::export_outputs(&app.session, gi, &ext, &pattern, depth))
+            .and_then(|(gi, ext, pattern, depth, size)| materialcraft_engine::file_cmds::export_outputs(&app.session, gi, &ext, &pattern, depth, size))
             .map_err(|e| e.to_string())
             .and_then(|files| {
                 let files: Vec<(String, Vec<u8>)> = files.into_iter().map(|f| (f.file, f.bytes)).collect();

@@ -170,8 +170,8 @@ impl Headless {
     /// Export every output of a graph into folder `dir`.
     pub fn export(&mut self, p: &Value) -> Result<Value, AutomationError> {
         let dir = p.get("dir").and_then(Value::as_str).ok_or_else(|| bad("`dir` is required"))?;
-        let (gi, ext, pattern, depth) = file_cmds::export_params(&self.session, p)?;
-        let files = file_cmds::export_outputs(&self.session, gi, &ext, &pattern, depth)?;
+        let (gi, ext, pattern, depth, size) = file_cmds::export_params(&self.session, p)?;
+        let files = file_cmds::export_outputs(&self.session, gi, &ext, &pattern, depth, size)?;
         self.create_dir_all(dir)?;
         let mut written = Vec::new();
         for f in files {

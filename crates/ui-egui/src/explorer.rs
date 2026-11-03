@@ -72,8 +72,9 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
             }
             Some(("export", i)) => {
                 // The export window works on the open graph.
-                app.run("graph.open", json!({"graph": i}));
-                app.ui.windows.export = true;
+                if app.run("graph.open", json!({"graph": i})).is_some() {
+                    app.ui.windows.export = true;
+                }
             }
             Some(("duplicate", i)) => {
                 app.run("graph.duplicate", json!({"graph": i}));

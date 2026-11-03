@@ -83,6 +83,11 @@ fn package_save_and_open_round_trip() {
     let out = dir.join("tex");
     let r = run(&mut s, "file.export", json!({"dir": out.to_str().unwrap(), "format": "png", "depth": 8}));
     assert_eq!(r["files"].as_array().unwrap().len(), 6);
+    let small = dir.join("small");
+    run(&mut s, "file.export", json!({"dir": small.to_str().unwrap(), "format": "png", "depth": 8, "size": 64}));
+    let file = std::fs::read_dir(&small).unwrap().next().unwrap().unwrap().path();
+    let img = materialcraft_formats::decode(&std::fs::read(file).unwrap()).unwrap();
+    assert_eq!((img.w, img.h), (64, 64));
     let _ = std::fs::remove_dir_all(&dir);
 }
 
