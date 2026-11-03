@@ -55,7 +55,7 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
                 open = Some(i);
             }
             resp.context_menu(|ui| {
-                for (label, a) in [("Open", "open"), ("Duplicate", "duplicate"), ("Delete", "delete")] {
+                for (label, a) in [("Open", "open"), ("Export outputs...", "export"), ("Duplicate", "duplicate"), ("Delete", "delete")] {
                     if ui.button(tr(label)).clicked() {
                         action = Some((a, i));
                         ui.close();
@@ -69,6 +69,11 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
         match action {
             Some(("open", i)) => {
                 app.run("graph.open", json!({"graph": i}));
+            }
+            Some(("export", i)) => {
+                // The export window works on the open graph.
+                app.run("graph.open", json!({"graph": i}));
+                app.ui.windows.export = true;
             }
             Some(("duplicate", i)) => {
                 app.run("graph.duplicate", json!({"graph": i}));
