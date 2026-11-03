@@ -23,7 +23,8 @@ L2  formats   .mcraft packages (zip: package.json + resources/), .mcmat portable
 L3  engine    Session (package, open graph, selection, 2D/3D view state, snapshot undo, cache),
               the command registry, inspect, sample materials and graph templates
 L3  render    the 3D view: BVH ray casts, parallax occlusion from the height output, GGX PBR with
-              prefiltered IBL + SH diffuse, ACES tone mapping; procedural environments
+              prefiltered IBL + SH diffuse, alpha transparency (layered ray compositing) and an
+              alpha channel view, ACES tone mapping; procedural environments
 L4  automation MCP server (rmcp), JSON-lines RPC (stdio/TCP with token), bridge client, workspace sandbox
 L5  ui-egui   the egui shell: docking (craft-ui), graph editor, library, properties, 2D/3D views,
               dialogs, menus, control channel with synthetic input
@@ -61,8 +62,9 @@ drag) into one undo step. See [control-protocol.md](control-protocol.md).
 `MaterialCraftApp` owns the session and `UiState` (serde, persisted by eframe, readable and writable
 through `ui.inspect` / `ui.set`). The dock (craft-ui) hosts eight panels around the protected graph
 panel. The graph editor lays nodes out in graph space, draws cards with thumbnails from the cook
-results (uploaded once per cache key), wires as cubic beziers between typed ports, and turns
-gestures into commands only when they complete. The 3D view renders with `materialcraft-render`
+results (uploaded once per cache key), wires as cubic beziers between typed ports (hit-tested
+against the curve, so a wire can be selected, deleted or split with a reroute dot), and turns
+gestures into commands only when they complete. See [wires-and-alpha.md](wires-and-alpha.md). The 3D view renders with `materialcraft-render`
 on the CPU: half resolution while the camera moves, 2×2 supersampled when it rests.
 
 `crates/ui-egui/tests/snapshot.rs` renders the real UI offscreen with egui_kittest + wgpu for visual
