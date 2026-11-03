@@ -11,6 +11,7 @@ pub mod control;
 pub mod cook;
 pub mod docking;
 pub mod explorer;
+pub mod fonts;
 pub mod function_editor;
 pub mod graph_view;
 pub mod i18n;
@@ -69,6 +70,8 @@ pub struct MaterialCraftApp {
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     next_autosave: f64,
     styled: Option<(theme::Brightness, theme::Accent)>,
+    /// Fallback fonts for Arabic.
+    pub fonts: fonts::UiFonts,
     /// The icon font is installed (it takes effect on the frame after `set_fonts`).
     fonts_ready: bool,
 }
@@ -78,6 +81,7 @@ impl MaterialCraftApp {
         let ui = cc.storage.and_then(|s| eframe::get_value::<UiState>(s, "ui")).unwrap_or_default();
         theme::install(&cc.egui_ctx);
         let mut app = MaterialCraftApp::headless(session, ui);
+        i18n::set_language(&app.ui.prefs.language);
         app.fonts_ready = true;
         app.ui.windows.home = app.ui.prefs.show_home;
         app
@@ -108,8 +112,10 @@ impl MaterialCraftApp {
             last_time: 0.0,
             next_autosave,
             styled: None,
+            fonts: fonts::UiFonts::default(),
             fonts_ready: false,
         };
+        i18n::set_language(&app.ui.prefs.language);
         app.apply_prefs();
         app
     }
@@ -205,6 +211,8 @@ impl MaterialCraftApp {
             ctx.request_repaint();
             return;
         }
+        i18n::set_language(&self.ui.prefs.language);
+        self.fonts.update(ctx, &self.ui.prefs.language, self.ui.windows.preferences);
         let now = ctx.input(|i| i.time);
         let dt = (now - self.last_time) as f32;
         if dt > 0.0 {
