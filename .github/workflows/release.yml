@@ -46,6 +46,7 @@ jobs:
       AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
       AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
       AZURE_CERT_PROFILE: ${{ secrets.AZURE_CERT_PROFILE }}
+      LINUX_SIGNING_KEY: ${{ secrets.LINUX_SIGNING_KEY }}
 
   # The jobs below stay here only while this repo is private. They follow the shared workflow's
   # FreeBSD job, on a larger runner. When the repo is public, remove them and has-freebsd: false.
