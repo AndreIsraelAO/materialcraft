@@ -10,3 +10,4 @@ target/
 /craft-fonts
 *.mcraft.tmp
 .claude/worktrees/
+pr-review-guidelines.md

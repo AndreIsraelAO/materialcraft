@@ -1,6 +1,6 @@
 //! MaterialCraft desktop app.
 //!
-//! Usage: `materialcraft [package.mcraft] [--control <port>] [--empty] [--version]`
+//! Usage: `materialcraft [package.sbs|package.mcraft] [--control <port>] [--empty] [--version]`
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
@@ -38,7 +38,7 @@ fn parse_args() -> Result<Option<Args>, String> {
                 return Ok(None);
             }
             "--help" | "-h" => {
-                println!("{}\n\nUsage: materialcraft [package.mcraft] [--control <port>] [--empty]", version());
+                println!("{}\n\nUsage: materialcraft [package.sbs|package.mcraft] [--control <port>] [--empty]", version());
                 return Ok(None);
             }
             "--control" => {
@@ -57,10 +57,7 @@ fn parse_args() -> Result<Option<Args>, String> {
 fn initial_session(args: &Args) -> Session {
     let mut s = materialcraft_engine::new_session();
     if let Some(f) = &args.file {
-        match std::fs::read(f)
-            .map_err(|e| e.to_string())
-            .and_then(|b| materialcraft_engine::file_cmds::open_bytes(&mut s, &b, Some(f.clone())).map_err(|e| e.to_string()))
-        {
+        match materialcraft_engine::file_cmds::open_file(&mut s, f).map_err(|e| e.to_string()) {
             Ok(()) => {}
             Err(e) => eprintln!("materialcraft: could not open {f}: {e}"),
         }

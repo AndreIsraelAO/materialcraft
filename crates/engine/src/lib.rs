@@ -19,7 +19,7 @@ pub mod session;
 pub mod view_cmds;
 
 pub use commands::{CommandSpec, command_specs, execute, find};
-pub use session::{CameraPrefs, Clip, Session, View2d, View3d};
+pub use session::{CameraPrefs, Clip, Session, View2d, View3d, WARNING_PREFIX};
 
 pub use materialcraft_core as core;
 pub use materialcraft_eval as eval;

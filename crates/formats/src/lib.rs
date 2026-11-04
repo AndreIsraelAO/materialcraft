@@ -1,6 +1,6 @@
 //! # materialcraft-formats
 //!
-//! File formats, L2: the native `.mcraft` package (a zip holding `package.json` and the embedded
+//! File formats, L2: SBS packages (`.sbs`, the main project format, see [`sbs`]), the older native `.mcraft` package (a zip holding `package.json` and the embedded
 //! `resources/`), bitmap decoding for Bitmap nodes, and texture export (PNG 8/16, JPEG, TGA,
 //! TIFF 8/16, BMP, WEBP, EXR 32F, HDR) with the output naming pattern, and meshes for the 3D view
 //! (OBJ, glTF/GLB), and portable materials (`.mcmat`, see [`material`]). Byte-based APIs work
@@ -10,6 +10,7 @@
 
 pub mod material;
 pub mod mesh;
+pub mod sbs;
 
 use std::io::{Cursor, Read, Write};
 use std::sync::Arc;
