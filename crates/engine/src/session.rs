@@ -125,6 +125,9 @@ pub struct Clip {
     pub connections: Vec<materialcraft_core::Connection>,
 }
 
+/// The prefix of warning lines in [`Session::log`].
+pub const WARNING_PREFIX: &str = "Warning: ";
+
 pub struct Session {
     pub pkg: Package,
     /// Where the package was opened from or last saved to.
@@ -140,6 +143,8 @@ pub struct Session {
     pub camera: CameraPrefs,
     pub modified: bool,
     pub log: Vec<String>,
+    /// What the last opened SBS package held that MaterialCraft couldn't read; empty after a clean open.
+    pub load_warnings: Vec<String>,
     pub clipboard: Option<Clip>,
     /// The last cook of the open graph.
     pub cooked: Cooked,
@@ -169,6 +174,7 @@ impl Session {
             camera: CameraPrefs::default(),
             modified: false,
             log: Vec::new(),
+            load_warnings: Vec::new(),
             clipboard: None,
             cooked: Cooked::default(),
             dirty: true,
@@ -367,6 +373,26 @@ impl Session {
         self.custom_mesh = Some((name.to_string(), Arc::new(mesh)));
         self.view3d.scene = "custom".into();
         Ok(())
+    }
+
+    /// Nodes of the open graph whose last cook failed, with the error, and how many placeholders for missing SBS nodes failed besides.
+    pub fn cook_failures(&self) -> (Vec<(NodeId, &str)>, usize) {
+        let mut failed = Vec::new();
+        let mut placeholders = 0;
+        for node in self.graph().map(|g| g.nodes.as_slice()).unwrap_or_default() {
+            let Some(error) = self.cooked.nodes.get(&node.id).and_then(|r| r.error.as_deref()) else { continue };
+            if node.def == materialcraft_core::MISSING_NODE {
+                placeholders += 1;
+            } else {
+                failed.push((node.id, error));
+            }
+        }
+        (failed, placeholders)
+    }
+
+    /// Log a warning, shown highlighted in the Console.
+    pub fn warn(&mut self, msg: impl Into<String>) {
+        self.log(format!("{WARNING_PREFIX}{}", msg.into()));
     }
 
     pub fn log(&mut self, msg: impl Into<String>) {

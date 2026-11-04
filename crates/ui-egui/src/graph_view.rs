@@ -729,14 +729,17 @@ fn canvas(app: &mut MaterialCraftApp, ui: &mut Ui) {
 
     search_popup(app, ui, &cam);
     comment_editor(app, ui);
-    if let Some(e) = cooked_error_count(app) {
-        painter.text(rect.right_bottom() - vec2(8.0, 8.0), Align2::RIGHT_BOTTOM, e, FontId::proportional(11.0), tk.danger);
+    let (failed, placeholders) = app.session.cook_failures();
+    let mut at = rect.right_bottom() - vec2(8.0, 8.0);
+    if !failed.is_empty() {
+        let text = format!("{} {} node(s) failed", icon::WARNING, failed.len());
+        at.y = painter.text(at, Align2::RIGHT_BOTTOM, text, FontId::proportional(11.0), tk.danger).top() - 2.0;
     }
-}
-
-fn cooked_error_count(app: &MaterialCraftApp) -> Option<String> {
-    let n = app.session.cooked.nodes.values().filter(|r| r.error.is_some()).count();
-    (n > 0).then(|| format!("{} {n} node(s) failed", icon::WARNING))
+    // Placeholders for missing SBS nodes are a soft warning, not a failure
+    if placeholders > 0 {
+        let text = format!("{} {placeholders} missing node(s), see the Console", icon::WARNING);
+        painter.text(at, Align2::RIGHT_BOTTOM, text, FontId::proportional(11.0), tk.warning);
+    }
 }
 
 fn grid(p: &egui::Painter, cam: &Cam, rect: Rect) {
