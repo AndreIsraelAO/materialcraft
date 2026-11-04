@@ -142,6 +142,15 @@ fn menus(app: &mut MaterialCraftApp, ui: &mut Ui) {
             });
             ui.menu_button(tr("Display"), |ui| {
                 ui.checkbox(&mut app.view3d.show_env, tr("Environment background"));
+                ui.separator();
+                let mut t = app.session.view3d.transparency;
+                if ui.checkbox(&mut t, tr("Transparency (alpha)")).changed() {
+                    app.run("view.3d", json!({"transparency": t}));
+                }
+                let mut a = app.session.view3d.alpha_view;
+                if ui.checkbox(&mut a, tr("Show alpha channel")).changed() {
+                    app.run("view.3d", json!({"alphaView": a}));
+                }
             });
             ui.menu_button(tr("Renderer"), |ui| {
                 let mut h = app.session.view3d.height_scale * 100.0;
@@ -201,6 +210,9 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
     if let Some(t) = &app.view3d.tex {
         p.image(t.id(), frame_rect(rect, app.view3d.tex_size), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
     }
+    if app.session.view3d.alpha_view {
+        p.text(rect.left_top() + vec2(8.0, 6.0), egui::Align2::LEFT_TOP, tr("Alpha channel"), egui::FontId::proportional(11.0), tk.viewport_text);
+    }
     if app.session.material_maps().is_empty() {
         p.text(
             rect.center_top() + vec2(0.0, 18.0),
@@ -233,6 +245,10 @@ pub fn show(app: &mut MaterialCraftApp, ui: &mut Ui) {
             });
             crate::widgets::name(&r.response, egui::Role::ComboBox, "Scene");
             ui.label(egui::RichText::new(format!("{}  sRGB / ACES", icon::SUN)).size(11.0).color(tk.text_dim));
+            let a = app.session.view3d.alpha_view;
+            if crate::widgets::icon_button(ui, icon::CHECKERBOARD, tr("Show alpha channel"), a, 20.0).clicked() {
+                app.run("view.3d", json!({"alphaView": !a}));
+            }
         });
     });
 }
@@ -261,7 +277,7 @@ fn content_key(app: &MaterialCraftApp, w: u32, h: u32, show_env: bool) -> u64 {
     use std::hash::{DefaultHasher, Hash, Hasher};
     let mut hs = DefaultHasher::new();
     let v = &app.session.view3d;
-    (w, h, show_env, &v.scene, &v.environment, app.session.custom_mesh.as_ref().map(|(n, _)| n)).hash(&mut hs);
+    (w, h, show_env, &v.scene, &v.environment, app.session.custom_mesh.as_ref().map(|(n, _)| n), v.transparency, v.alpha_view).hash(&mut hs);
     for f in [v.yaw, v.pitch, v.distance, v.target[0], v.target[1], v.target[2], v.tiling, v.exposure, v.env_rotation, v.height_scale] {
         f.to_bits().hash(&mut hs);
     }
@@ -350,6 +366,8 @@ fn inputs(app: &mut MaterialCraftApp, supersample: u32) -> Option<(Arc<Scene>, A
         height_scale: v.height_scale,
         show_env: app.view3d.show_env,
         supersample,
+        transparency: v.transparency,
+        alpha_view: v.alpha_view,
         ..Settings::default()
     };
     let maps = Maps::from_usages(app.session.material_maps());

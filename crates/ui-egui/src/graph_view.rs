@@ -6,7 +6,10 @@
 //! it, drag the empty canvas to box-select (Ctrl adds), middle-drag or Alt+drag to pan, wheel to
 //! zoom, double-click a node to show it in the 2D view (a graph instance opens its graph), Space, Tab or
 //! double-click the canvas for the node search, right-click for menus, drop library items to add
-//! them. Every edit is an engine command; the gestures only draw previews until they commit.
+//! them. Click a wire to select it (Shift or Ctrl+click adds more; Delete removes them, X swaps
+//! where they come from), drag a wire to pull a reroute dot out of it, double-click a wire to drop
+//! a dot there, right-click a wire for its menu. Every edit is an
+//! engine command; the gestures only draw previews until they commit.
 
 use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 use egui_phosphor::regular as icon;
@@ -32,13 +35,39 @@ pub struct LibraryDrag(pub String);
 
 #[derive(Clone, Debug)]
 enum Drag {
-    Nodes { delta: Vec2 },
-    Box { start: Pos2 },
-    Wire { from: (NodeId, String), detached: Option<(NodeId, String)> },
+    Nodes {
+        delta: Vec2,
+    },
+    Box {
+        start: Pos2,
+    },
+    Wire {
+        from: (NodeId, String),
+        detached: Option<(NodeId, String)>,
+    },
+    /// Pressed on a wire: a click selects it, a drag pulls a reroute dot out of it.
+    WirePress {
+        wire: WireRef,
+        start: Pos2,
+    },
     Pan,
-    Frame { id: u64, delta: Vec2, resize: bool, nodes: Vec<NodeId> },
-    Comment { id: u64, delta: Vec2 },
+    Frame {
+        id: u64,
+        delta: Vec2,
+        resize: bool,
+        nodes: Vec<NodeId>,
+    },
+    Comment {
+        id: u64,
+        delta: Vec2,
+    },
 }
+
+/// A wire, named by the input it feeds: (node, input port).
+pub type WireRef = (NodeId, String);
+
+/// Pointer distance (points) within which a wire is hit.
+const WIRE_HIT: f32 = 5.0;
 
 /// The node search popup (Space or Tab).
 #[derive(Clone, Debug)]
@@ -76,6 +105,12 @@ pub struct GraphView {
     menu_at: Pos2,
     /// The graph the camera last framed.
     framed_graph: Option<usize>,
+    /// The selected wires, in the order they were picked (Delete removes them, X swaps them).
+    pub selected_wires: Vec<WireRef>,
+    /// The wire the context menu is for (right-clicked on a wire).
+    menu_wire: Option<WireRef>,
+    /// Wires on screen last frame: the wire and its bezier control points.
+    pub wires: Vec<(WireRef, [Pos2; 4])>,
 }
 
 impl Default for GraphView {
@@ -90,6 +125,9 @@ impl Default for GraphView {
             view: Rect::NOTHING,
             menu_at: Pos2::ZERO,
             framed_graph: None,
+            selected_wires: Vec::new(),
+            menu_wire: None,
+            wires: Vec::new(),
         }
     }
 }
@@ -169,10 +207,47 @@ fn port_pos(r: Rect, i: usize, n: usize, output: bool, dot: bool) -> Pos2 {
     pos2(if output { r.right() } else { r.left() }, start + i as f32 * PORT_GAP)
 }
 
-fn bezier(p: &egui::Painter, a: Pos2, b: Pos2, stroke: Stroke) {
+/// Control points of the wire from output `a` to input `b` (screen space).
+fn bezier_points(a: Pos2, b: Pos2) -> [Pos2; 4] {
     let dx = ((b.x - a.x).abs() * 0.5).max(30.0);
-    let shape = egui::epaint::CubicBezierShape::from_points_stroke([a, a + vec2(dx, 0.0), b - vec2(dx, 0.0), b], false, Color32::TRANSPARENT, stroke);
-    p.add(shape);
+    [a, a + vec2(dx, 0.0), b - vec2(dx, 0.0), b]
+}
+
+fn bezier(p: &egui::Painter, a: Pos2, b: Pos2, stroke: Stroke) {
+    p.add(egui::epaint::CubicBezierShape::from_points_stroke(bezier_points(a, b), false, Color32::TRANSPARENT, stroke));
+}
+
+/// The point at `t` (0..1) along a cubic bezier.
+fn bezier_at(c: &[Pos2; 4], t: f32) -> Pos2 {
+    let u = 1.0 - t;
+    let w = [u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t];
+    pos2(c.iter().zip(w).map(|(p, w)| p.x * w).sum(), c.iter().zip(w).map(|(p, w)| p.y * w).sum())
+}
+
+/// Distance from `p` to a cubic bezier (sampled as a polyline).
+fn bezier_distance(c: &[Pos2; 4], p: Pos2) -> f32 {
+    const N: usize = 32;
+    let mut best = f32::INFINITY;
+    let mut prev = c[0];
+    for i in 1..=N {
+        let q = bezier_at(c, i as f32 / N as f32);
+        let (seg, rel) = (q - prev, p - prev);
+        let t = if seg.length_sq() > 0.0 { (rel.dot(seg) / seg.length_sq()).clamp(0.0, 1.0) } else { 0.0 };
+        best = best.min((prev + seg * t).distance(p));
+        prev = q;
+    }
+    best
+}
+
+/// The wire nearest `p` within [`WIRE_HIT`] points.
+fn wire_at(wires: &[(WireRef, [Pos2; 4])], p: Pos2) -> Option<&WireRef> {
+    wires
+        .iter()
+        .filter(|(_, c)| Rect::from_points(c).expand(WIRE_HIT).contains(p))
+        .map(|(w, c)| (w, bezier_distance(c, p)))
+        .filter(|(_, d)| *d <= WIRE_HIT)
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(w, _)| w)
 }
 
 /// The graph panel: toolbar row and canvas.
@@ -333,6 +408,7 @@ fn canvas(app: &mut MaterialCraftApp, ui: &mut Ui) {
     if app.ui.frame_all || app.graph.framed_graph != Some(app.session.graph) {
         app.ui.frame_all = false;
         app.graph.framed_graph = Some(app.session.graph);
+        app.graph.selected_wires.clear();
         frame(app, rect, false);
     }
     let painter = ui.painter_at(rect);
@@ -461,6 +537,7 @@ fn canvas(app: &mut MaterialCraftApp, ui: &mut Ui) {
         Some(Drag::Wire { detached: Some(d), .. }) => Some(d.clone()),
         _ => None,
     };
+    let mut wires: Vec<(WireRef, [Pos2; 4])> = Vec::with_capacity(g.connections.len());
     for c in &g.connections {
         if detached.as_ref().is_some_and(|(n, p)| *n == c.to && *p == c.to_port) {
             continue;
@@ -468,11 +545,32 @@ fn canvas(app: &mut MaterialCraftApp, ui: &mut Ui) {
         let a = laid.iter().find(|l| l.id == c.from).and_then(|l| l.outs.iter().find(|p| p.0 == c.from_port));
         let b = laid.iter().find(|l| l.id == c.to).and_then(|l| l.ins.iter().find(|p| p.0 == c.to_port));
         if let (Some(a), Some(b)) = (a, b) {
-            let hot = selection.contains(&c.from) || selection.contains(&c.to);
-            let col = if hot { tk.accent } else { Color32::from_gray(0xb4) };
-            bezier(&painter, cam.to_screen(a.3), cam.to_screen(b.3), Stroke::new((2.0 * cam.zoom).clamp(1.0, 3.0), col));
+            wires.push(((c.to, c.to_port.clone()), bezier_points(cam.to_screen(a.3), cam.to_screen(b.3))));
         }
     }
+    // Hover: not where a node card or a port sits on top of the wire.
+    let over_card = |p: Pos2| app.graph.rects.iter().any(|(_, r)| r.contains(p)) || nearest_port(&app.graph.ports, p, 9.0).is_some();
+    let wire_hover = match &app.graph.drag {
+        None => pointer.filter(|p| rect.contains(*p) && !over_card(*p)).and_then(|p| wire_at(&wires, p)).cloned(),
+        Some(Drag::WirePress { wire, .. }) => Some(wire.clone()),
+        Some(_) => None,
+    };
+    for (w, ctrl) in &wires {
+        let Some(c) = g.input_of(w.0, &w.1) else { continue };
+        let hot = selection.contains(&c.from) || selection.contains(&c.to);
+        let picked = app.graph.selected_wires.contains(w);
+        let hovered = wire_hover.as_ref() == Some(w);
+        let base = (2.0 * cam.zoom).clamp(1.0, 3.0);
+        let stroke = if picked {
+            Stroke::new(base + 2.0, tk.accent)
+        } else if hovered {
+            Stroke::new(base + 1.0, Color32::WHITE)
+        } else {
+            Stroke::new(base, if hot { tk.accent } else { Color32::from_gray(0xb4) })
+        };
+        painter.add(egui::epaint::CubicBezierShape::from_points_stroke(*ctrl, false, Color32::TRANSPARENT, stroke));
+    }
+    app.graph.wires = wires;
 
     // Nodes.
     let font = FontId::proportional((10.5 * cam.zoom).clamp(6.0, 16.0));
@@ -594,7 +692,24 @@ fn canvas(app: &mut MaterialCraftApp, ui: &mut Ui) {
         painter.galley(bg.min + vec2(3.0, 3.0), g_, tk.text_strong);
     }
 
-    handle_input(app, ui, &resp, rect, &cam, &node_resps, &frame_hits, &comment_hits, port_hover, &laid.iter().map(|l| (l.id, l.rect)).collect::<Vec<_>>());
+    // A wire under a comment is not hit.
+    let wire_hover = wire_hover.filter(|_| !pointer.is_some_and(|p| comment_hits.iter().any(|(_, r)| r.contains(p))));
+    if wire_hover.is_some() {
+        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    handle_input(
+        app,
+        ui,
+        &resp,
+        rect,
+        &cam,
+        &node_resps,
+        &frame_hits,
+        &comment_hits,
+        port_hover,
+        wire_hover,
+        &laid.iter().map(|l| (l.id, l.rect)).collect::<Vec<_>>(),
+    );
 
     // Drag previews.
     match &app.graph.drag {
@@ -614,14 +729,17 @@ fn canvas(app: &mut MaterialCraftApp, ui: &mut Ui) {
 
     search_popup(app, ui, &cam);
     comment_editor(app, ui);
-    if let Some(e) = cooked_error_count(app) {
-        painter.text(rect.right_bottom() - vec2(8.0, 8.0), Align2::RIGHT_BOTTOM, e, FontId::proportional(11.0), tk.danger);
+    let (failed, placeholders) = app.session.cook_failures();
+    let mut at = rect.right_bottom() - vec2(8.0, 8.0);
+    if !failed.is_empty() {
+        let text = format!("{} {} node(s) failed", icon::WARNING, failed.len());
+        at.y = painter.text(at, Align2::RIGHT_BOTTOM, text, FontId::proportional(11.0), tk.danger).top() - 2.0;
     }
-}
-
-fn cooked_error_count(app: &MaterialCraftApp) -> Option<String> {
-    let n = app.session.cooked.nodes.values().filter(|r| r.error.is_some()).count();
-    (n > 0).then(|| format!("{} {n} node(s) failed", icon::WARNING))
+    // Placeholders for missing SBS nodes are a soft warning, not a failure
+    if placeholders > 0 {
+        let text = format!("{} {placeholders} missing node(s), see the Console", icon::WARNING);
+        painter.text(at, Align2::RIGHT_BOTTOM, text, FontId::proportional(11.0), tk.warning);
+    }
 }
 
 fn grid(p: &egui::Painter, cam: &Cam, rect: Rect) {
@@ -663,6 +781,7 @@ fn handle_input(
     frames: &[(u64, Rect, Rect)],
     comments: &[(u64, Rect)],
     port_hover: Option<PortHit>,
+    wire_hover: Option<WireRef>,
     graph_rects: &[(NodeId, Rect)],
 ) {
     let ctx = ui.ctx().clone();
@@ -681,7 +800,15 @@ fn handle_input(
         if middle_down || (primary_pressed && mods.alt) {
             app.graph.drag = Some(Drag::Pan);
         } else if primary_pressed {
-            if let Some(h) = &port_hover {
+            let on_card = nodes.iter().any(|(_, r)| r.rect.contains(p)) || comments.iter().any(|(_, r)| r.contains(p));
+            let wire = wire_hover.as_ref().filter(|_| port_hover.is_none() && !on_card);
+            // Any press other than on a wire drops the wire selection.
+            if wire.is_none() {
+                app.graph.selected_wires.clear();
+            }
+            if let Some(w) = wire {
+                app.graph.drag = Some(Drag::WirePress { wire: w.clone(), start: p });
+            } else if let Some(h) = &port_hover {
                 if h.output {
                     app.graph.drag = Some(Drag::Wire { from: (h.node, h.port.clone()), detached: None });
                 } else if let Some(c) = app.session.graph().ok().and_then(|g| g.input_of(h.node, &h.port).cloned()) {
@@ -727,6 +854,19 @@ fn handle_input(
             app.ui.graph_camera.pan = [app.ui.graph_camera.pan[0] - d.x, app.ui.graph_camera.pan[1] - d.y];
         }
         Some(Drag::Nodes { delta }) | Some(Drag::Frame { delta, .. }) | Some(Drag::Comment { delta, .. }) => *delta += motion,
+        Some(Drag::WirePress { wire, start }) => {
+            // Dragged far enough: a reroute dot where the press was, carried by the pointer.
+            if let Some(p) = pointer
+                && p.distance(*start) > 4.0
+            {
+                let (wire, start) = (wire.clone(), *start);
+                let at = cam.to_graph(start);
+                app.graph.drag = None;
+                if app.run("graph.wire.insertDot", json!({"to": wire.0.0, "toPort": wire.1, "at": [at.x, at.y]})).is_some() {
+                    app.graph.drag = Some(Drag::Nodes { delta: (p - start) / zoom });
+                }
+            }
+        }
         _ => {}
     }
 
@@ -735,6 +875,20 @@ fn handle_input(
     if ended && let Some(drag) = app.graph.drag.take() {
         match drag {
             Drag::Pan => {}
+            Drag::WirePress { wire, .. } => {
+                app.session.selection.clear();
+                let sel = &mut app.graph.selected_wires;
+                if mods.ctrl && sel.contains(&wire) {
+                    // Ctrl+click toggles a wire out of the selection.
+                    sel.retain(|w| *w != wire);
+                } else if mods.ctrl || mods.shift {
+                    if !sel.contains(&wire) {
+                        sel.push(wire);
+                    }
+                } else {
+                    *sel = vec![wire];
+                }
+            }
             Drag::Nodes { delta } => {
                 if delta.length() > 0.5 {
                     app.run("graph.node.move", json!({"by": [delta.x, delta.y]}));
@@ -843,15 +997,34 @@ fn handle_input(
         && !on_node
         && let Some(p) = pointer
     {
-        open_search(app, cam.to_graph(p), None);
+        match &wire_hover {
+            // Double-click a wire: a reroute dot there.
+            Some(w) => {
+                let at = cam.to_graph(p);
+                app.run("graph.wire.insertDot", json!({"to": w.0.0, "toPort": w.1, "at": [at.x, at.y]}));
+                app.graph.selected_wires.clear();
+            }
+            None => open_search(app, cam.to_graph(p), None),
+        }
     }
     if canvas.secondary_clicked()
         && let Some(p) = pointer
     {
         app.graph.menu_at = cam.to_graph(p);
+        app.graph.menu_wire = wire_hover.clone().filter(|_| !on_node);
+        // Right-clicking a selected wire keeps the selection (to swap or delete them all).
+        if let Some(w) = &app.graph.menu_wire
+            && !app.graph.selected_wires.contains(w)
+        {
+            app.session.selection.clear();
+            app.graph.selected_wires = vec![w.clone()];
+        }
     }
     let at = app.graph.menu_at;
-    canvas.context_menu(|ui| canvas_menu(app, ui, at));
+    canvas.context_menu(|ui| match app.graph.menu_wire.clone() {
+        Some(w) => wire_menu(app, ui, w, at),
+        None => canvas_menu(app, ui, at),
+    });
 
     // Library drops.
     if let Some(payload) = canvas.dnd_release_payload::<LibraryDrag>()
@@ -1022,6 +1195,55 @@ fn node_menu(app: &mut MaterialCraftApp, ui: &mut Ui, id: NodeId) {
     item(ui, "Create graph from selection", "graph.createFromSelection", json!({}));
 }
 
+/// `wires` as the `{wires: [{to, toPort}, ...]}` parameter of the wire commands.
+fn wires_json(wires: &[WireRef]) -> serde_json::Value {
+    json!({"wires": wires.iter().map(|(to, port)| json!({"to": to.0, "toPort": port})).collect::<Vec<_>>()})
+}
+
+/// Delete the selected wires in one undo step (the Delete and Backspace keys); `false` when none
+/// is selected.
+pub fn delete_selected_wires(app: &mut MaterialCraftApp) -> bool {
+    let wires = std::mem::take(&mut app.graph.selected_wires);
+    if wires.is_empty() {
+        return false;
+    }
+    app.run("graph.wire.delete", wires_json(&wires));
+    true
+}
+
+/// Swap where the selected wires come from (the X key): two wires trade sources, more reverse
+/// them in input order. The wires stay selected, so X again swaps back. `false` when no wire is
+/// selected.
+pub fn swap_selected_wires(app: &mut MaterialCraftApp) -> bool {
+    if app.graph.selected_wires.is_empty() {
+        return false;
+    }
+    let params = wires_json(&app.graph.selected_wires);
+    app.run("graph.wire.swap", params);
+    true
+}
+
+fn wire_menu(app: &mut MaterialCraftApp, ui: &mut Ui, (to, port): WireRef, at: Pos2) {
+    let n = app.graph.selected_wires.len();
+    if ui.button(format!("{}  {}", icon::DOT_OUTLINE, tr("Insert reroute dot"))).clicked() {
+        app.run("graph.wire.insertDot", json!({"to": to.0, "toPort": port, "at": [at.x, at.y]}));
+        app.graph.selected_wires.clear();
+        ui.close();
+    }
+    if n >= 2 && ui.button(format!("{}  {}  (X)", icon::ARROWS_LEFT_RIGHT, tr("Swap selected links"))).clicked() {
+        swap_selected_wires(app);
+        ui.close();
+    }
+    let label = if n >= 2 { tr("Delete selected links") } else { tr("Delete link") };
+    if ui.button(format!("{}  {label}", icon::TRASH)).clicked() {
+        if n < 2 {
+            app.graph.selected_wires = vec![(to, port)];
+        }
+        delete_selected_wires(app);
+        ui.close();
+    }
+}
+
 fn canvas_menu(app: &mut MaterialCraftApp, ui: &mut Ui, at: Pos2) {
     ui.menu_button(tr("Add node"), |ui| {
         for (cat, ids) in materialcraft_engine::nodes::categories() {
@@ -1117,6 +1339,55 @@ mod tests {
     }
 
     #[test]
+    fn clicked_wires_swap_with_x_and_delete_together() {
+        let mut app = MaterialCraftApp::headless(materialcraft_engine::sample_session(), crate::UiState::default());
+        app.run("file.new", json!({"template": "empty"}));
+        let id = |v: Option<serde_json::Value>| v.and_then(|v| v["id"].as_u64()).unwrap();
+        let a = id(app.run("graph.node.add", json!({"def": "clouds_1", "at": [0, -150]})));
+        let b = id(app.run("graph.node.add", json!({"def": "checker", "at": [0, 150]})));
+        let blend = id(app.run("graph.node.add", json!({"def": "blend", "at": [450, 0]})));
+        app.run("graph.connect", json!({"from": a, "to": blend, "toPort": "foreground"}));
+        app.run("graph.connect", json!({"from": b, "to": blend, "toPort": "background"}));
+        let ctx = egui::Context::default();
+        let mut frame = |app: &mut MaterialCraftApp, mut events: Vec<egui::Event>, modifiers: egui::Modifiers| {
+            events.insert(0, egui::Event::ModifiersChanged(modifiers));
+            let input = egui::RawInput { events, ..Default::default() };
+            ctx.run_ui(input, |ui| {
+                app.step(&ui.ctx().clone());
+                app.draw(ui);
+            })
+            .textures_delta
+            .clear();
+        };
+        for _ in 0..3 {
+            frame(&mut app, Vec::new(), egui::Modifiers::NONE);
+        }
+        let mid =
+            |app: &MaterialCraftApp, port: &str| app.graph.wires.iter().find(|(w, _)| w.0.0 == blend && w.1 == port).map(|(_, c)| bezier_at(c, 0.5)).unwrap();
+        let click =
+            |app: &mut MaterialCraftApp, frame: &mut dyn FnMut(&mut MaterialCraftApp, Vec<egui::Event>, egui::Modifiers), port: &str, m: egui::Modifiers| {
+                let p = mid(app, port);
+                let button = |pressed| egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: m };
+                frame(app, vec![egui::Event::PointerMoved(p)], m);
+                frame(app, vec![button(true)], m);
+                frame(app, vec![button(false)], m);
+            };
+        click(&mut app, &mut frame, "foreground", egui::Modifiers::NONE);
+        click(&mut app, &mut frame, "background", egui::Modifiers::SHIFT);
+        assert_eq!(app.graph.selected_wires.len(), 2, "{:?}", app.graph.selected_wires);
+        let key = |k| egui::Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
+        let src = |app: &MaterialCraftApp, port: &str| app.session.graph().unwrap().input_of(NodeId(blend), port).unwrap().from.0;
+        frame(&mut app, vec![key(egui::Key::X)], egui::Modifiers::NONE);
+        assert_eq!((src(&app, "foreground"), src(&app, "background")), (b, a));
+        // Still selected: X again swaps back.
+        frame(&mut app, vec![key(egui::Key::X)], egui::Modifiers::NONE);
+        assert_eq!((src(&app, "foreground"), src(&app, "background")), (a, b));
+        frame(&mut app, vec![key(egui::Key::Delete)], egui::Modifiers::NONE);
+        assert!(app.session.graph().unwrap().connections.is_empty());
+        assert!(app.graph.selected_wires.is_empty());
+    }
+
+    #[test]
     fn node_search_shortcuts_respect_hover_and_keyboard_focus() {
         for key in [egui::Key::Space, egui::Key::Tab] {
             for (hovered, editing) in [(true, false), (false, false), (true, true)] {
@@ -1156,6 +1427,23 @@ mod tests {
         assert!(matches("blur").first().is_some_and(|d| d.label.to_ascii_lowercase().starts_with("blur")));
         assert!(matches("noises cells").iter().all(|d| d.category.contains("Noises")));
         assert!(matches("zzzz").is_empty());
+    }
+
+    #[test]
+    fn wires_are_hit_near_their_curve_only() {
+        let a = (NodeId(1), "input".to_string());
+        let b = (NodeId(2), "input".to_string());
+        let wires = vec![(a.clone(), bezier_points(pos2(0.0, 0.0), pos2(200.0, 100.0))), (b.clone(), bezier_points(pos2(0.0, 300.0), pos2(200.0, 300.0)))];
+        // The midpoint of a symmetric wire lies on the line between its ends.
+        let mid = bezier_at(&wires[0].1, 0.5);
+        assert!((mid - pos2(100.0, 50.0)).length() < 1e-3, "{mid:?}");
+        assert_eq!(wire_at(&wires, mid + vec2(0.0, 3.0)), Some(&a));
+        assert_eq!(wire_at(&wires, pos2(100.0, 302.0)), Some(&b));
+        assert_eq!(wire_at(&wires, pos2(100.0, 200.0)), None);
+        assert_eq!(wire_at(&wires, mid + vec2(0.0, WIRE_HIT * 3.0)), None);
+        // The ends are on the wire.
+        assert!(bezier_distance(&wires[0].1, pos2(0.0, 0.0)) < 1e-3);
+        assert!(bezier_distance(&wires[0].1, pos2(200.0, 100.0)) < 1e-3);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! MaterialCraft desktop app.
 //!
-//! Usage: `materialcraft [package.mcraft] [--control <port>] [--empty] [--version]`
+//! Usage: `materialcraft [package.sbs|package.mcraft] [--control <port>] [--empty] [--version]`
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
@@ -26,11 +26,10 @@ fn version() -> String {
 struct Args {
     file: Option<String>,
     control: Option<u16>,
-    empty: bool,
 }
 
 fn parse_args() -> Result<Option<Args>, String> {
-    let mut args = Args { file: None, control: None, empty: false };
+    let mut args = Args { file: None, control: None };
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -39,14 +38,15 @@ fn parse_args() -> Result<Option<Args>, String> {
                 return Ok(None);
             }
             "--help" | "-h" => {
-                println!("{}\n\nUsage: materialcraft [package.mcraft] [--control <port>] [--empty]", version());
+                println!("{}\n\nUsage: materialcraft [package.sbs|package.mcraft] [--control <port>] [--empty]", version());
                 return Ok(None);
             }
             "--control" => {
                 let p = it.next().ok_or("--control needs a port")?;
                 args.control = Some(p.parse().map_err(|_| format!("invalid port `{p}`"))?);
             }
-            "--empty" => args.empty = true,
+            // Kept for scripts written before empty startup became the default.
+            "--empty" => {}
             f if !f.starts_with('-') => args.file = Some(f.to_string()),
             other => return Err(format!("unknown option `{other}`")),
         }
@@ -55,18 +55,9 @@ fn parse_args() -> Result<Option<Args>, String> {
 }
 
 fn initial_session(args: &Args) -> Session {
-    let mut s = if args.empty {
-        let mut pkg = materialcraft_engine::core::Package::new("Untitled package");
-        pkg.graphs.push(materialcraft_engine::samples::template("pbr", "New_graph", 10));
-        Session::new(pkg)
-    } else {
-        materialcraft_engine::sample_session()
-    };
+    let mut s = materialcraft_engine::new_session();
     if let Some(f) = &args.file {
-        match std::fs::read(f)
-            .map_err(|e| e.to_string())
-            .and_then(|b| materialcraft_engine::file_cmds::open_bytes(&mut s, &b, Some(f.clone())).map_err(|e| e.to_string()))
-        {
+        match materialcraft_engine::file_cmds::open_file(&mut s, f).map_err(|e| e.to_string()) {
             Ok(()) => {}
             Err(e) => eprintln!("materialcraft: could not open {f}: {e}"),
         }
@@ -119,5 +110,36 @@ fn main() {
     if let Err(e) = r {
         eprintln!("materialcraft: {e}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn startup_without_a_file_has_one_empty_graph() {
+        let s = initial_session(&Args { file: None, control: None });
+        assert_eq!(s.pkg.name, "Untitled package");
+        assert_eq!(s.pkg.graphs.len(), 1);
+        let g = s.graph().unwrap();
+        assert_eq!(g.name, "New_graph");
+        assert!(g.nodes.is_empty());
+        assert!(g.connections.is_empty());
+        assert!(s.path.is_none());
+        assert!(!s.modified);
+        assert!(s.history().is_empty());
+    }
+
+    #[test]
+    fn startup_opens_the_requested_package() {
+        let path = std::env::temp_dir().join(format!("mc-startup-{}.mcraft", std::process::id()));
+        let original = materialcraft_engine::sample_session();
+        std::fs::write(&path, materialcraft_engine::file_cmds::save_bytes(&original).unwrap()).unwrap();
+        let s = initial_session(&Args { file: Some(path.to_string_lossy().into_owned()), control: None });
+        assert_eq!(s.pkg.graphs, original.pkg.graphs);
+        assert_eq!(s.path.as_deref(), path.to_str());
+        assert!(!s.modified);
+        std::fs::remove_file(path).unwrap();
     }
 }

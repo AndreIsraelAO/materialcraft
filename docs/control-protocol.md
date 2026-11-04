@@ -62,13 +62,15 @@ Types: `move`, `down`, `up`, `click`, `doubleClick`, `drag`, `scroll`, `key` (eg
 | `file.new` | `{template?, name?, size?}`; templates from `graph.templates` (`empty`, `pbr`, `bricks`, `stone_tiles`, `wood`, `rusty_metal`, `fabric`, `ground`) |
 | `graph.node.add` | `{def, at?, params?, connectFrom?: {node, port?}, label?}` |
 | `graph.connect` / `graph.disconnect` | `{from, fromPort?, to, toPort?}` / `{to, toPort}` |
+| `graph.wire.insertDot` | `{to, toPort, at?}`: split the wire feeding `to.toPort` with a reroute Dot node at `at` (graph point, default midway), selected |
+| `graph.wire.swap` / `graph.wire.delete` | `{wires: [{to, toPort}, ...]}`: swap (two) or reverse (more, in input order) where the wires come from / delete them, one undo step each |
 | `graph.node.param` | `{id?, param, value}`: numbers, `[x, y]`, `"#rrggbb"`, enum index, curve `[[x, y], …]`, gradient `[[pos, color], …]`, or a typed value `{"t": "function", "v": {...}}` |
 | `graph.node.base` | `{id?, sizeMode?, size?, format?, seed?, tiling?}` |
 | `graph.exposed.add` / `graph.exposed.set` | `{id, label?, default?, bind?: {node, param}}` / `{id, value}` |
 | `graph.node.function` | `{id?, param, function}` drives a parameter by a function graph of the graph's inputs (dynamic parameter); `{id?, param, remove: true}` removes it |
 | `graph.preset.save` / `.apply` / `.delete` | `{name}`: store, restore or remove the current input values |
 | `graph.createFromSelection` | `{name?, ids?}`: move nodes into a sub-graph and replace them with an instance |
-| `view.2d` / `view.3d` | which node the 2D view shows, channel, tiling, histogram; scene, environment, camera, tiling, parallax depth |
+| `view.2d` / `view.3d` | which node the 2D view shows, channel, tiling, histogram; scene, environment, camera, tiling, parallax depth, `transparency` (see through where the alpha is below one: the opacity output, else the base color's alpha), `alphaView` (show the alpha channel) |
 | `view.3d.loadMesh` | `{path}` shows an OBJ, glTF or GLB mesh (scene `custom`) |
 | `library.list` | `{filter?, category?}`: every node with ports and parameters |
 
@@ -116,7 +118,8 @@ each has its own reader and writer (`crates/formats/src/material.rs` here), so k
 | `file.exportMaterial` | `{path, graph?, size? (px), values? {input: value}, inputs? {identifier: image path}}`: cook and write a `.mcmat`. TextureCraft runs `materialcraft-cli run source.mcraft file.exportMaterial {...}` to re-cook at its texture set's resolution with its own values and baked mesh maps |
 | `file.sendToTextureCraft` | `{graph?}`: export into TextureCraft's library folder (`Documents/TextureCraft/library`), where its shelf lists it |
 | `graph.input.bind` / `graph.input.unbind` | `{identifier, resource? \| path?}` / `{identifier}`: a preview image for an input node (a mesh map exported from TextureCraft), saved in the package |
-| `file.open` | also opens a `.mcmat`'s source package, on its graph, with no file name |
+| `file.open` | opens `.sbs` (by content) and `.mcraft` packages, and a `.mcmat`'s source package, on its graph, with no file name. Returns `warnings`: what an SBS file holds that MaterialCraft can't read yet (missing nodes are kept as placeholders); also in `session.inspect` as `package.warnings` |
+| `file.save` | `{path?}`: SBS unless the file is `.mcraft`; `.sbs` is appended when `path` has no package extension |
 
 ## MCP tools
 
