@@ -2,10 +2,8 @@
 //! export. Host-path commands are native only; the browser and agents use the byte-based
 //! functions (`open_bytes`, `save_bytes`, `export_outputs`).
 //!
-//! SBS (`.sbs`) is the main project format: packages save as SBS unless their file is a `.mcraft`
-//! package (the older native format, still read and written). Opening an SBS file never fails on
-//! what MaterialCraft lacks: missing nodes become placeholders and every gap is a warning in the
-//! session log (the Console) and in `session.inspect` (`package.warnings`).
+//! SBS (`.sbs`) is the main project format; `.mcraft` packages still open and save as `.mcraft`.
+//! What an SBS file holds that MaterialCraft can't read is a warning (Console, `package.warnings`), never an error.
 
 use serde_json::{Value as J, json};
 
@@ -33,7 +31,7 @@ pub(crate) fn specs() -> Vec<CommandSpec> {
             "Open...",
             ["File"],
             Some("Ctrl+O"),
-            "{path} opens an .sbs or .mcraft package (or a .mcmat material's source); returns `warnings` for anything an SBS file holds that MaterialCraft can't read yet",
+            "{path} opens an .sbs or .mcraft package (or a .mcmat material's source); returns `warnings` for what an SBS file holds that MaterialCraft can't read yet, and `path`, null for a file another program wrote (Save then needs a new `path`)",
             always,
             open
         ),
@@ -117,10 +115,9 @@ pub enum PackageFormat {
 }
 
 impl PackageFormat {
-    /// The format a package file at `path` is saved in: `.mcraft` stays `.mcraft`, anything
-    /// else is SBS.
+    /// The format a file at `path` is saved in: `.mcraft` stays `.mcraft`, anything else is SBS.
     pub fn of_path(path: &str) -> PackageFormat {
-        if path.to_ascii_lowercase().ends_with(&format!(".{}", materialcraft_core::PACKAGE_EXT)) { PackageFormat::Mcraft } else { PackageFormat::Sbs }
+        if has_extension(path, PackageFormat::Mcraft.ext()) { PackageFormat::Mcraft } else { PackageFormat::Sbs }
     }
 
     pub fn ext(self) -> &'static str {
@@ -131,27 +128,25 @@ impl PackageFormat {
     }
 }
 
-/// `path` with the package extension appended unless it already ends in `.sbs` or `.mcraft`.
+fn has_extension(path: &str, ext: &str) -> bool {
+    path.rsplit_once('.').is_some_and(|(_, e)| e.eq_ignore_ascii_case(ext))
+}
+
+/// `path` with `.sbs` appended unless it already ends in `.sbs` or `.mcraft`.
 pub fn package_path(path: &str) -> String {
-    let lower = path.to_ascii_lowercase();
-    if [PackageFormat::Sbs, PackageFormat::Mcraft].iter().any(|f| lower.ends_with(&format!(".{}", f.ext()))) {
+    if [PackageFormat::Sbs, PackageFormat::Mcraft].iter().any(|f| has_extension(path, f.ext())) {
         path.to_string()
     } else {
         format!("{path}.{}", PackageFormat::Sbs.ext())
     }
 }
 
-/// Open package bytes (any platform): SBS (by content), `.mcraft`, or a portable material
-/// (`.mcmat`), which opens the package it was cooked from, on its graph, with no file name
-/// (saving must not overwrite the material). Files an SBS package links to (bitmaps kept next
-/// to it) are not available this way: see [`open_bytes_linked`].
+/// Open package bytes on any platform: SBS, `.mcraft`, or a `.mcmat` material's source package.
 pub fn open_bytes(s: &mut Session, bytes: &[u8], name: Option<String>) -> Result<()> {
     open_bytes_linked(s, bytes, name, &|_| None)
 }
 
-/// [`open_bytes`] with `linked` loading the files an SBS package refers to by a path relative to
-/// it. Warnings (missing nodes, unreadable parameters or resources) go to the session log and
-/// [`Session::load_warnings`].
+/// [`open_bytes`] with `linked` loading files an SBS package links to; materials and SBS files from other programs open unnamed so Save can't overwrite them.
 pub fn open_bytes_linked(s: &mut Session, bytes: &[u8], name: Option<String>, linked: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<()> {
     if materialcraft_formats::material::is_material(bytes) {
         let (manifest, source) = materialcraft_formats::material::read_material(bytes)?;
@@ -159,29 +154,36 @@ pub fn open_bytes_linked(s: &mut Session, bytes: &[u8], name: Option<String>, li
         s.graph = s.pkg.graph_by_name(&manifest.graph).map_or(0, |(i, _)| i);
         return Ok(());
     }
-    if materialcraft_formats::sbs::is_sbs(bytes) {
-        let read = materialcraft_formats::sbs::read_sbs(bytes, name.as_deref().unwrap_or(""), linked)?;
-        replace_package(s, read.pkg, name);
-        if !read.warnings.is_empty() {
-            s.warn(format!("{} opened with {} warning(s): what MaterialCraft can't read yet is listed below", s.pkg.name, read.warnings.len()));
-            for w in &read.warnings {
-                s.warn(w.clone());
-            }
-        }
-        s.load_warnings = read.warnings;
+
+    // A broken `.sbs` should report an SBS error, but a renamed zip package still opens
+    let named_sbs = name.as_deref().is_some_and(|n| has_extension(n, PackageFormat::Sbs.ext())) && !bytes.starts_with(b"PK");
+    if !named_sbs && !materialcraft_formats::sbs::is_sbs(bytes) {
+        replace_package(s, materialcraft_formats::load_package(bytes)?, name);
         return Ok(());
     }
-    let pkg = materialcraft_formats::load_package(bytes)?;
-    replace_package(s, pkg, name);
+
+    let read = materialcraft_formats::sbs::read_sbs(bytes, name.as_deref().unwrap_or(""), linked)?;
+    let from_elsewhere = !read.exact;
+    replace_package(s, read.pkg, if from_elsewhere { None } else { name.clone() });
+
+    if !read.warnings.is_empty() {
+        s.warn(format!("{} opened with {} warning(s): what MaterialCraft can't read yet is listed below", s.pkg.name, read.warnings.len()));
+        for warning in &read.warnings {
+            s.warn(warning.clone());
+        }
+    }
+    if from_elsewhere && let Some(file) = &name {
+        s.log(format!("{file} was not saved by MaterialCraft: Save asks for a new file, so the original keeps everything MaterialCraft can't read"));
+    }
+    s.load_warnings = read.warnings;
     Ok(())
 }
 
-/// The package as SBS bytes (the main project format).
+/// The package as SBS bytes, the main project format.
 pub fn save_bytes(s: &Session) -> Result<Vec<u8>> {
     save_bytes_as(s, PackageFormat::Sbs)
 }
 
-/// The package as bytes of `format`.
 pub fn save_bytes_as(s: &Session, format: PackageFormat) -> Result<Vec<u8>> {
     Ok(match format {
         PackageFormat::Sbs => materialcraft_formats::sbs::write_sbs(&s.pkg)?,
@@ -189,30 +191,34 @@ pub fn save_bytes_as(s: &Session, format: PackageFormat) -> Result<Vec<u8>> {
     })
 }
 
-/// A reader for the files an SBS package at `path` links to: plain relative paths inside the
-/// package's folder only (no absolute paths, `..`, drive letters or URLs; symlinks may not leave
-/// the folder), up to 256 MB each.
+/// Largest file an SBS package may link to.
+#[cfg(not(target_arch = "wasm32"))]
+const MAX_LINKED_FILE_BYTES: u64 = 256 << 20;
+
+/// Reads files an SBS package at `path` links to: plain relative paths that resolve inside its folder.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn linked_files(path: &str) -> impl Fn(&str) -> Option<Vec<u8>> + use<> {
-    let dir = std::path::Path::new(path).parent().map(std::path::Path::to_path_buf).unwrap_or_default();
-    move |rel: &str| {
-        let rel = rel.trim().replace('\\', "/");
-        let p = std::path::Path::new(&rel);
-        if rel.is_empty() || rel.contains(':') || rel.starts_with('/') || p.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
+    let parent = std::path::Path::new(path).parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(std::path::Path::new("."));
+    let folder = std::fs::canonicalize(parent).ok();
+
+    move |relative: &str| {
+        let relative = relative.trim().replace('\\', "/");
+        let plain = !relative.is_empty() && !relative.contains(':') && !relative.starts_with('/');
+        if !plain || std::path::Path::new(&relative).components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
             return None;
         }
-        let base = std::fs::canonicalize(if dir.as_os_str().is_empty() { std::path::Path::new(".") } else { dir.as_path() }).ok()?;
-        let full = std::fs::canonicalize(base.join(p)).ok()?;
-        let meta = std::fs::metadata(&full).ok()?;
-        if !full.starts_with(&base) || !meta.is_file() || meta.len() > 256 << 20 {
+
+        let folder = folder.as_ref()?;
+        let file = std::fs::canonicalize(folder.join(&relative)).ok()?;
+        let metadata = std::fs::metadata(&file).ok()?;
+        if !file.starts_with(folder) || !metadata.is_file() || metadata.len() > MAX_LINKED_FILE_BYTES {
             return None;
         }
-        std::fs::read(full).ok()
+        std::fs::read(file).ok()
     }
 }
 
-/// Open the package file at `path` (native): SBS, `.mcraft` or `.mcmat`, with the bitmaps an SBS
-/// package keeps next to it.
+/// Open the package file at `path` (native), with the bitmaps an SBS package keeps next to it.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn open_file(s: &mut Session, path: &str) -> Result<()> {
     let bytes = std::fs::read(path).map_err(|e| bad("file.open", format!("{path}: {e}")))?;
@@ -224,7 +230,7 @@ fn open(s: &mut Session, p: &J) -> Result<J> {
     let path = strp(p, "path").ok_or_else(|| bad("file.open", "`path` is required"))?;
     open_file(s, path)?;
     s.log(format!("Opened {path}"));
-    Ok(json!({"name": s.pkg.name, "graphs": s.pkg.graphs.len(), "warnings": s.load_warnings}))
+    Ok(json!({"name": s.pkg.name, "graphs": s.pkg.graphs.len(), "path": s.path, "warnings": s.load_warnings}))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -236,8 +242,9 @@ fn open(_: &mut Session, _: &J) -> Result<J> {
 fn save(s: &mut Session, p: &J) -> Result<J> {
     let path = match strp(p, "path") {
         Some(path) => package_path(path),
-        None => s.path.clone().ok_or_else(|| bad("file.save", "the package has no file yet: give a `path`"))?,
+        None => s.path.clone().ok_or_else(|| bad("file.save", "the package has no file yet (new, or opened from another program): give a `path`"))?,
     };
+
     let bytes = save_bytes_as(s, PackageFormat::of_path(&path))?;
     materialcraft_formats::write_atomic(std::path::Path::new(&path), &bytes)?;
     s.path = Some(path.clone());

@@ -136,8 +136,7 @@ pub struct Session {
     pub camera: CameraPrefs,
     pub modified: bool,
     pub log: Vec<String>,
-    /// What the last opened SBS package held that MaterialCraft couldn't read (missing nodes,
-    /// unsupported parameters, unavailable resources). Empty after a clean open.
+    /// What the last opened SBS package held that MaterialCraft couldn't read; empty after a clean open.
     pub load_warnings: Vec<String>,
     pub clipboard: Option<Clip>,
     /// The last cook of the open graph.
@@ -369,7 +368,22 @@ impl Session {
         Ok(())
     }
 
-    /// Log a warning (shown highlighted in the Console).
+    /// Nodes of the open graph whose last cook failed, with the error, and how many placeholders for missing SBS nodes failed besides.
+    pub fn cook_failures(&self) -> (Vec<(NodeId, &str)>, usize) {
+        let mut failed = Vec::new();
+        let mut placeholders = 0;
+        for node in self.graph().map(|g| g.nodes.as_slice()).unwrap_or_default() {
+            let Some(error) = self.cooked.nodes.get(&node.id).and_then(|r| r.error.as_deref()) else { continue };
+            if node.def == materialcraft_core::MISSING_NODE {
+                placeholders += 1;
+            } else {
+                failed.push((node.id, error));
+            }
+        }
+        (failed, placeholders)
+    }
+
+    /// Log a warning, shown highlighted in the Console.
     pub fn warn(&mut self, msg: impl Into<String>) {
         self.log(format!("{WARNING_PREFIX}{}", msg.into()));
     }

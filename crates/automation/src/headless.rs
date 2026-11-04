@@ -63,6 +63,21 @@ pub struct Headless {
     light: Option<Lighting>,
 }
 
+/// Read a file under `fs`'s access rules.
+fn read_file(fs: &Filesystem, path: &str) -> Result<Vec<u8>, AutomationError> {
+    match fs {
+        Filesystem::Denied => Err(bad("file access is not granted: start the server with --read-root <dir>")),
+        Filesystem::TrustedLocal => {
+            let len = std::fs::metadata(path).map_err(|e| AutomationError::Io(format!("cannot read {path}: {e}")))?.len();
+            if len > MAX_READ_BYTES {
+                return Err(bad(format!("{path} is {len} bytes (limit {MAX_READ_BYTES})")));
+            }
+            std::fs::read(path).map_err(|e| AutomationError::Io(format!("cannot read {path}: {e}")))
+        }
+        Filesystem::Workspace(w) => w.read(path),
+    }
+}
+
 impl Headless {
     pub fn new(session: Session, fs: Filesystem) -> Headless {
         Headless { session, fs, scene: None, light: None }
@@ -78,17 +93,7 @@ impl Headless {
     }
 
     fn read(&self, path: &str) -> Result<Vec<u8>, AutomationError> {
-        match &self.fs {
-            Filesystem::Denied => Err(bad("file access is not granted: start the server with --read-root <dir>")),
-            Filesystem::TrustedLocal => {
-                let len = std::fs::metadata(path).map_err(|e| AutomationError::Io(format!("cannot read {path}: {e}")))?.len();
-                if len > MAX_READ_BYTES {
-                    return Err(bad(format!("{path} is {len} bytes (limit {MAX_READ_BYTES})")));
-                }
-                std::fs::read(path).map_err(|e| AutomationError::Io(format!("cannot read {path}: {e}")))
-            }
-            Filesystem::Workspace(w) => w.read(path),
-        }
+        read_file(&self.fs, path)
     }
 
     fn write(&self, path: &str, bytes: &[u8]) -> Result<(), AutomationError> {
@@ -138,33 +143,32 @@ impl Headless {
         batch_reply(results, None)
     }
 
-    /// Open an `.sbs` or `.mcraft` package (or a `.mcmat` material's source). Bitmaps an SBS
-    /// package links to are read from beside it, through the same file access rules.
+    /// Open an `.sbs` or `.mcraft` package (or a `.mcmat` material's source), reading linked bitmaps under the same access rules.
     pub fn open(&mut self, path: &str) -> Result<Value, AutomationError> {
         let bytes = self.read(path)?;
-        let dir = path.replace('\\', "/").rsplit_once('/').map(|(d, _)| format!("{d}/")).unwrap_or_default();
-        let mut session = std::mem::replace(&mut self.session, Session::new(materialcraft_engine::core::Package::new("")));
-        let linked = |rel: &str| -> Option<Vec<u8>> {
-            let rel = rel.trim().replace('\\', "/");
-            let safe = !rel.is_empty() && !rel.contains(':') && !rel.starts_with('/') && rel.split('/').all(|c| !c.is_empty() && c != "." && c != "..");
-            if !safe {
+        let folder = path.replace('\\', "/").rsplit_once('/').map(|(folder, _)| format!("{folder}/")).unwrap_or_default();
+        let fs = &self.fs;
+        let linked = |relative: &str| -> Option<Vec<u8>> {
+            let relative = relative.trim().replace('\\', "/");
+            let plain = !relative.is_empty() && !relative.contains(':') && !relative.starts_with('/');
+            let inside = relative.split('/').all(|part| !part.is_empty() && part != "." && part != "..");
+            if !plain || !inside {
                 return None;
             }
-            self.read(&format!("{dir}{rel}")).ok()
+            read_file(fs, &format!("{folder}{relative}")).ok()
         };
-        let result = file_cmds::open_bytes_linked(&mut session, &bytes, Some(path.to_string()), &linked);
-        self.session = session;
-        result?;
+
+        file_cmds::open_bytes_linked(&mut self.session, &bytes, Some(path.to_string()), &linked)?;
         Ok(self.inspect())
     }
 
-    /// Save the package to `path` or its own file: SBS unless the file is a `.mcraft` package
-    /// (`.sbs` is appended when `path` has no package extension).
+    /// Save to `path` (`.sbs` appended without a package extension) or the package's own file; SBS unless it is a `.mcraft`.
     pub fn save(&mut self, path: Option<&str>) -> Result<Value, AutomationError> {
         let path = match path {
             Some(p) => file_cmds::package_path(p),
-            None => self.session.path.clone().ok_or_else(|| bad("the package has no file yet: give a `path`"))?,
+            None => self.session.path.clone().ok_or_else(|| bad("the package has no file yet (new, or opened from another program): give a `path`"))?,
         };
+
         let bytes = file_cmds::save_bytes_as(&self.session, file_cmds::PackageFormat::of_path(&path))?;
         self.write(&path, &bytes)?;
         self.session.path = Some(path.clone());

@@ -449,27 +449,22 @@ fn home(app: &mut MaterialCraftApp, ctx: &egui::Context) {
 
 pub fn console(app: &mut MaterialCraftApp, ui: &mut Ui) {
     let tk = Tokens::get(ui.ctx());
+    let console_line = |text: String, color: Color32| RichText::new(text).monospace().size(11.0).color(color);
+
     egui::ScrollArea::vertical().stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
-        for l in &app.session.log {
-            let warning = l.starts_with(materialcraft_engine::WARNING_PREFIX);
-            ui.label(RichText::new(l).monospace().size(11.0).color(if warning { tk.warning } else { tk.text }));
+        for line in &app.session.log {
+            let warning = line.starts_with(materialcraft_engine::WARNING_PREFIX);
+            ui.label(console_line(line.clone(), if warning { tk.warning } else { tk.text }));
         }
-        // Cook errors; placeholders for missing SBS nodes are already listed in the warnings above.
-        let graph = app.session.graph().ok();
-        let placeholder = |id: &NodeId| graph.and_then(|g| g.node(*id).ok()).is_some_and(|n| n.def == materialcraft_engine::core::MISSING_NODE);
-        let mut missing = 0;
-        for (id, r) in &app.session.cooked.nodes {
-            if let Some(e) = &r.error {
-                if placeholder(id) {
-                    missing += 1;
-                    continue;
-                }
-                ui.label(RichText::new(format!("node {}: {e}", id.0)).monospace().size(11.0).color(tk.danger));
-            }
+
+        // Placeholders for missing SBS nodes are already listed in the warnings, so they get one line
+        let (failed, placeholders) = app.session.cook_failures();
+        for (id, error) in failed {
+            ui.label(console_line(format!("node {}: {error}", id.0), tk.danger));
         }
-        if missing > 0 {
-            let text = format!("{missing} {}", tr("placeholder node(s) stand in for nodes MaterialCraft doesn't have yet (see the warnings above)"));
-            ui.label(RichText::new(text).monospace().size(11.0).color(tk.warning));
+        if placeholders > 0 {
+            let text = format!("{placeholders} {}", tr("placeholder node(s) stand in for nodes MaterialCraft doesn't have yet (see the warnings above)"));
+            ui.label(console_line(text, tk.warning));
         }
     });
 }
@@ -523,18 +518,15 @@ pub fn function_summary(app: &mut MaterialCraftApp, ui: &mut Ui, node: NodeId, p
     });
 }
 
-/// Extensions File ▸ Open reads: SBS packages (the main format), `.mcraft` packages and
-/// portable materials (opening their source package).
+/// Extensions File ▸ Open reads: SBS (the main format) and `.mcraft` packages, and materials (their source package).
 pub const OPEN_EXTS: &[&str] = &["sbs", "mcraft", MATERIAL_EXT];
 
-/// After a package opened: when it had warnings (an SBS file using nodes MaterialCraft doesn't
-/// have yet, say), bring the Console forward so they're seen. Nothing is lost: the missing nodes
-/// are placeholders that keep their wires and are written back on save.
+/// After a package opened with warnings (an SBS file using nodes MaterialCraft lacks, say), bring the Console forward.
 pub fn after_open(app: &mut MaterialCraftApp) {
-    let n = app.session.load_warnings.len();
-    if n > 0 {
+    let warning_count = app.session.load_warnings.len();
+    if warning_count > 0 {
         app.ui.dock.focus(crate::docking::Panel::Console);
-        app.toast(format!("{} {n} {}", tr("Opened with"), tr("warnings: see the Console")), false);
+        app.toast(format!("{} {warning_count} {}", tr("Opened with"), tr("warnings: see the Console")), false);
     }
 }
 
