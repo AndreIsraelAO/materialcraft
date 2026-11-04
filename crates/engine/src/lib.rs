@@ -19,7 +19,7 @@ pub mod session;
 pub mod view_cmds;
 
 pub use commands::{CommandSpec, command_specs, execute, find};
-pub use session::{CameraPrefs, Clip, Session, View2d, View3d};
+pub use session::{CameraPrefs, Clip, Session, View2d, View3d, WARNING_PREFIX};
 
 pub use materialcraft_core as core;
 pub use materialcraft_eval as eval;
@@ -47,6 +47,13 @@ pub type Result<T> = std::result::Result<T, EngineError>;
 
 /// Version string shown in About, `--version` and window titles.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// A fresh, unsaved package with one empty graph, used at desktop and browser startup.
+pub fn new_session() -> Session {
+    let mut pkg = core::Package::new("Untitled package");
+    pkg.graphs.push(samples::template("empty", "New_graph", 10));
+    Session::new(pkg)
+}
 
 /// A session on the built-in sample package (the brick wall).
 pub fn sample_session() -> Session {

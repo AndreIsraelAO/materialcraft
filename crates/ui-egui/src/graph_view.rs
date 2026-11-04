@@ -4,7 +4,7 @@
 //! Gestures: left-drag a node to move it (the selection moves together), drag from a port to wire
 //! it (dropping on empty canvas opens the node search, wired), drag an input to unplug and re-route
 //! it, drag the empty canvas to box-select (Ctrl adds), middle-drag or Alt+drag to pan, wheel to
-//! zoom, double-click a node to show it in the 2D view (a graph instance opens its graph), Space or
+//! zoom, double-click a node to show it in the 2D view (a graph instance opens its graph), Space, Tab or
 //! double-click the canvas for the node search, right-click for menus, drop library items to add
 //! them. Every edit is an engine command; the gestures only draw previews until they commit.
 
@@ -40,7 +40,7 @@ enum Drag {
     Comment { id: u64, delta: Vec2 },
 }
 
-/// The node search popup (Space).
+/// The node search popup (Space or Tab).
 #[derive(Clone, Debug)]
 struct Search {
     at: Pos2,
@@ -62,6 +62,7 @@ pub struct PortHit {
 }
 
 pub struct GraphView {
+    pub(crate) keyboard_was_focused: bool,
     drag: Option<Drag>,
     search: Option<Search>,
     /// Comment being edited: id and text.
@@ -80,6 +81,7 @@ pub struct GraphView {
 impl Default for GraphView {
     fn default() -> Self {
         GraphView {
+            keyboard_was_focused: false,
             drag: None,
             search: None,
             editing: None,
@@ -612,14 +614,17 @@ fn canvas(app: &mut MaterialCraftApp, ui: &mut Ui) {
 
     search_popup(app, ui, &cam);
     comment_editor(app, ui);
-    if let Some(e) = cooked_error_count(app) {
-        painter.text(rect.right_bottom() - vec2(8.0, 8.0), Align2::RIGHT_BOTTOM, e, FontId::proportional(11.0), tk.danger);
+    let (failed, placeholders) = app.session.cook_failures();
+    let mut at = rect.right_bottom() - vec2(8.0, 8.0);
+    if !failed.is_empty() {
+        let text = format!("{} {} node(s) failed", icon::WARNING, failed.len());
+        at.y = painter.text(at, Align2::RIGHT_BOTTOM, text, FontId::proportional(11.0), tk.danger).top() - 2.0;
     }
-}
-
-fn cooked_error_count(app: &MaterialCraftApp) -> Option<String> {
-    let n = app.session.cooked.nodes.values().filter(|r| r.error.is_some()).count();
-    (n > 0).then(|| format!("{} {n} node(s) failed", icon::WARNING))
+    // Placeholders for missing SBS nodes are a soft warning, not a failure
+    if placeholders > 0 {
+        let text = format!("{} {placeholders} missing node(s), see the Console", icon::WARNING);
+        painter.text(at, Align2::RIGHT_BOTTOM, text, FontId::proportional(11.0), tk.warning);
+    }
 }
 
 fn grid(p: &egui::Painter, cam: &Cam, rect: Rect) {
@@ -865,13 +870,15 @@ fn handle_input(
 
     // Keys over the canvas.
     let hovered = pointer.is_some_and(|p| rect.contains(p));
-    if hovered && !ctx.egui_wants_keyboard_input() && app.graph.search.is_none() {
-        if ctx.input(|i| i.key_pressed(egui::Key::Space))
+    if hovered && app.graph.search.is_none() {
+        let space = !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Space));
+        let tab = !app.graph.keyboard_was_focused && !ctx.text_edit_focused() && ctx.input(|i| i.key_pressed(egui::Key::Tab));
+        if (space || tab)
             && let Some(p) = pointer
         {
             open_search(app, cam.to_graph(p), None);
         }
-        if ctx.input(|i| i.key_pressed(egui::Key::F) && i.modifiers.is_none()) {
+        if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::F) && i.modifiers.is_none()) {
             let sel = !app.session.selection.is_empty();
             frame(app, rect, sel);
         }
@@ -1082,6 +1089,69 @@ fn canvas_menu(app: &mut MaterialCraftApp, ui: &mut Ui, at: Pos2) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tab_opens_search_in_the_full_workspace() {
+        let mut app = MaterialCraftApp::headless(materialcraft_engine::sample_session(), crate::UiState::default());
+        let ctx = egui::Context::default();
+        for _ in 0..3 {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                app.step(&ui.ctx().clone());
+                app.draw(ui);
+            })
+            .textures_delta
+            .clear();
+        }
+        let pointer = app.graph.view.center();
+        let input = egui::RawInput {
+            events: vec![
+                egui::Event::PointerMoved(pointer),
+                egui::Event::Key { key: egui::Key::Tab, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE },
+            ],
+            ..Default::default()
+        };
+        ctx.run_ui(input, |ui| {
+            app.step(&ui.ctx().clone());
+            app.draw(ui);
+        })
+        .textures_delta
+        .clear();
+        assert!(app.graph.search.is_some());
+    }
+
+    #[test]
+    fn node_search_shortcuts_respect_hover_and_keyboard_focus() {
+        for key in [egui::Key::Space, egui::Key::Tab] {
+            for (hovered, editing) in [(true, false), (false, false), (true, true)] {
+                let ctx = egui::Context::default();
+                let mut app = MaterialCraftApp::headless(materialcraft_engine::sample_session(), crate::UiState::default());
+                let mut text = String::new();
+                let mut draw = |ui: &mut Ui| {
+                    if editing {
+                        ui.text_edit_singleline(&mut text).request_focus();
+                    }
+                    app.graph.keyboard_was_focused = ui.ctx().egui_wants_keyboard_input();
+                    show(&mut app, ui);
+                };
+                ctx.run_ui(egui::RawInput::default(), &mut draw).textures_delta.clear();
+                let pointer = if hovered { pos2(200.0, 200.0) } else { pos2(-10.0, -10.0) };
+                let input = egui::RawInput {
+                    events: vec![
+                        egui::Event::PointerMoved(pointer),
+                        egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE },
+                    ],
+                    ..Default::default()
+                };
+                ctx.run_ui(input, &mut draw).textures_delta.clear();
+                assert_eq!(app.graph.search.is_some(), hovered && !editing, "{key:?}: hovered={hovered}, editing={editing}");
+                if let Some(search) = &app.graph.search {
+                    let cam = Cam { origin: app.graph.view.min, pan: Vec2::from(app.ui.graph_camera.pan), zoom: app.ui.graph_camera.zoom };
+                    assert_eq!(search.at, cam.to_graph(pointer));
+                    assert!(search.text.is_empty());
+                }
+            }
+        }
+    }
 
     #[test]
     fn search_finds_by_label_and_category() {

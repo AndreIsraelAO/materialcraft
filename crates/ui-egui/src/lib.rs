@@ -157,12 +157,12 @@ impl MaterialCraftApp {
         }
         self.next_autosave = now + period;
         let dir = user_dir("autosave");
-        let path = dir.join(format!("{}.mcraft", materialcraft_engine::formats::safe_file_name(&self.session.pkg.name)));
+        let path = dir.join(format!("{}.sbs", materialcraft_engine::formats::safe_file_name(&self.session.pkg.name)));
         let pkg = self.session.pkg.clone();
         let spawned = std::thread::Builder::new().name("materialcraft-autosave".into()).spawn(move || {
             let result = std::fs::create_dir_all(&dir)
                 .map_err(|e| e.to_string())
-                .and_then(|_| materialcraft_engine::formats::save_package(&pkg).map_err(|e| e.to_string()))
+                .and_then(|_| materialcraft_engine::formats::sbs::write_sbs(&pkg).map_err(|e| e.to_string()))
                 .and_then(|bytes| materialcraft_engine::formats::write_atomic(&path, &bytes).map_err(|e| e.to_string()));
             match result {
                 Ok(()) => log::info!("autosaved {}", path.display()),
@@ -244,6 +244,8 @@ impl MaterialCraftApp {
         }
         let ctx = ui.ctx().clone();
         let t0 = now_ms();
+        // Tab can focus a menu or toolbar button while drawing; preserve keyboard ownership.
+        self.graph.keyboard_was_focused = ctx.egui_wants_keyboard_input();
         menus::menu_bar(self, ui);
         toolbar::main_toolbar(self, ui);
         toolbar::status_bar(self, ui);

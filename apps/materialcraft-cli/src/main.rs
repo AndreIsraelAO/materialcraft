@@ -14,17 +14,17 @@ materialcraft-cli: headless MaterialCraft
 
 USAGE:
   materialcraft-cli --version
-  materialcraft-cli info <package.mcraft | sample>
+  materialcraft-cli info <package.sbs | package.mcraft | sample>
       Graphs, nodes, outputs and cook results, as JSON.
   materialcraft-cli commands [--filter <text>]
       List the engine commands (id, label, params).
   materialcraft-cli nodes [--filter <text>] [--category <text>]
       List the node library (ids, ports, parameters).
-  materialcraft-cli run <input> <command-id> [params-json] [-o <out.mcraft>]
+  materialcraft-cli run <input> <command-id> [params-json] [-o <out.sbs>]
       Run one command and print its JSON result; -o saves the package.
   materialcraft-cli batch <script.json>
-      Run [{\"id\", \"params\"}, ...] or {\"open\": <input>, \"steps\": [...], \"save\": <out.mcraft>}.
-  materialcraft-cli new <template> <out.mcraft> [--size <px>] [--name <name>]
+      Run [{\"id\", \"params\"}, ...] or {\"open\": <input>, \"steps\": [...], \"save\": <out.sbs>}.
+  materialcraft-cli new <template> <out.sbs> [--size <px>] [--name <name>]
       A new package with one graph from a template (empty, pbr, bricks, stone_tiles, wood,
       metal_plates, rusty_metal, lava, marble, wicker, fabric, ground).
   materialcraft-cli cook <input> [--graph <index>] [--set <input>=<value>]... [--full]
@@ -44,7 +44,8 @@ USAGE:
   materialcraft-cli serve [--port <port>] [--read-root <dir>] [--write-root <dir>]
       JSON lines ({\"id\",\"method\",\"params\"}) on stdio, or on 127.0.0.1:<port> with a token.
 
-<input> is a .mcraft package or `sample` (the built-in brick wall). --set gives a graph input a value
+<input> is an .sbs or .mcraft package or `sample` (the built-in brick wall). Packages save as SBS
+unless the output path ends in .mcraft. --set gives a graph input a value
 (JSON, e.g. `--set roughness=0.4 --set tint=\"#aa7744\"`) before cooking. See docs/control-protocol.md.
 ";
 
@@ -113,7 +114,7 @@ fn version() -> String {
     }
 }
 
-/// A headless session on `input` (a .mcraft package or `sample`), with local file access.
+/// A headless session on `input` (an .sbs or .mcraft package, or `sample`), with local file access.
 fn open(input: &str) -> Result<Headless, String> {
     let mut h = Headless::new(Headless::default_session(), Filesystem::TrustedLocal);
     if input != "sample" {
@@ -210,7 +211,7 @@ fn run(cmd: &str, a: &Args) -> Result<(), String> {
         }
         "new" => {
             let tpl = a.pos(0, "<template>")?;
-            let out = a.pos(1, "<out.mcraft>")?;
+            let out = a.pos(1, "<out.sbs>")?;
             let mut h = Headless::new(Headless::default_session(), Filesystem::TrustedLocal);
             h.command_run("file.newPackage", json!({"name": a.get("--name").unwrap_or("Untitled package")})).map_err(|e| e.to_string())?;
             h.command_run("file.new", json!({"template": tpl, "size": a.num::<u64>("--size")?.unwrap_or(1024), "name": a.get("--name")}))

@@ -116,7 +116,8 @@ each has its own reader and writer (`crates/formats/src/material.rs` here), so k
 | `file.exportMaterial` | `{path, graph?, size? (px), values? {input: value}, inputs? {identifier: image path}}`: cook and write a `.mcmat`. TextureCraft runs `materialcraft-cli run source.mcraft file.exportMaterial {...}` to re-cook at its texture set's resolution with its own values and baked mesh maps |
 | `file.sendToTextureCraft` | `{graph?}`: export into TextureCraft's library folder (`Documents/TextureCraft/library`), where its shelf lists it |
 | `graph.input.bind` / `graph.input.unbind` | `{identifier, resource? \| path?}` / `{identifier}`: a preview image for an input node (a mesh map exported from TextureCraft), saved in the package |
-| `file.open` | also opens a `.mcmat`'s source package, on its graph, with no file name |
+| `file.open` | opens `.sbs` (by content) and `.mcraft` packages, and a `.mcmat`'s source package, on its graph, with no file name. Returns `warnings`: what an SBS file holds that MaterialCraft can't read yet (missing nodes are kept as placeholders); also in `session.inspect` as `package.warnings` |
+| `file.save` | `{path?}`: SBS unless the file is `.mcraft`; `.sbs` is appended when `path` has no package extension |
 
 ## MCP tools
 

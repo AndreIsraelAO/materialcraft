@@ -53,6 +53,12 @@ pub fn ports(pkg: &Package, node: &Node) -> (Vec<Port>, Vec<Port>) {
         };
         return (io("input"), io("output"));
     }
+    if node.def == materialcraft_core::MISSING_NODE {
+        let (ins, outs) = materialcraft_core::missing_ports(node);
+        let ins = ins.into_iter().map(|id| Port { label: id.clone(), id, kind: PortKind::Any }).collect();
+        let outs = outs.into_iter().map(|(id, gray)| Port { label: id.clone(), id, kind: if gray { PortKind::Gray } else { PortKind::Color } }).collect();
+        return (ins, outs);
+    }
     let Some(def) = find(&node.def) else { return (Vec::new(), Vec::new()) };
     let conv = |p: &materialcraft_nodes::PortDef| Port { id: p.id.into(), label: p.label.into(), kind: p.kind };
     (def.inputs.iter().map(conv).collect(), def.outputs.iter().map(conv).collect())
@@ -374,6 +380,9 @@ fn cook_node(pkg: &Package, graph: &Graph, node: &Node, done: &Cooked, vars: &BT
     } else if let Some(img) = input_img {
         let img = img.resize(w, h, tile);
         Ok(vec![if node.def == "input_grayscale" { img.to_gray() } else { img }])
+    } else if node.def == materialcraft_core::MISSING_NODE {
+        let name = if node.label.is_empty() { "this node" } else { node.label.as_str() };
+        Err(format!("`{name}` is not in MaterialCraft's library yet: kept as a placeholder from the SBS file"))
     } else if node.def == "graph_instance" {
         cook_instance(pkg, node, &in_ports, &out_ports, &inputs, &params, (w, h), opts, cache)
     } else if let Some(d) = def {

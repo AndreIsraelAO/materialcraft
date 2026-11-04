@@ -124,6 +124,31 @@ impl Node {
     }
 }
 
+/// The definition id of a placeholder for a node MaterialCraft does not have (a library node or
+/// atomic filter named in an SBS file). The node keeps its wires and the data needed to write it
+/// back; its ports come from [`missing_ports`] and it cooks to a soft error.
+pub const MISSING_NODE: &str = "missing_node";
+
+/// The ports of a [`MISSING_NODE`] placeholder: input ids, and output ids with whether each is
+/// grayscale. They are stored as comma-separated text in its `inputs` and `outputs` parameters
+/// (`outputs` entries are `id` or `id:gray`).
+pub fn missing_ports(node: &Node) -> (Vec<String>, Vec<(String, bool)>) {
+    let list = |key: &str| -> Vec<String> {
+        match node.params.get(key) {
+            Some(Value::Text(s)) => s.split(',').map(str::trim).filter(|p| !p.is_empty()).take(64).map(str::to_string).collect(),
+            _ => Vec::new(),
+        }
+    };
+    let outputs = list("outputs")
+        .into_iter()
+        .map(|o| match o.split_once(':') {
+            Some((id, kind)) => (id.to_string(), kind == "gray"),
+            None => (o, false),
+        })
+        .collect();
+    (list("inputs"), outputs)
+}
+
 /// A link from an output port to an input port.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

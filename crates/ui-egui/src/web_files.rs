@@ -79,6 +79,7 @@ pub fn load(app: &mut MaterialCraftApp, name: &str, bytes: Vec<u8>, bitmap: bool
         Ok(()) => {
             app.ui.frame_all = true;
             app.toast(format!("{} {name}", tr("Opened")), false);
+            crate::windows::after_open(app);
         }
         Err(e) => app.toast(format!("{} {name}: {e}", tr("Couldn't open")), true),
     }
@@ -91,16 +92,14 @@ pub fn dropped(app: &mut MaterialCraftApp, ctx: &egui::Context, file: &egui::Dro
     #[cfg(not(target_arch = "wasm32"))]
     {
         let _ = ctx;
+        let lower = name.to_ascii_lowercase();
+        if (lower.ends_with(".sbs") || lower.ends_with(".mcraft")) && file.path().is_file() {
+            // Open from the path so an SBS package finds the bitmaps kept next to it.
+            crate::windows::open_path(app, &file.path().display().to_string());
+            return;
+        }
         match file.bytes() {
-            Ok(bytes) => {
-                let package = name.to_ascii_lowercase().ends_with(".mcraft");
-                load(app, &name, bytes, false);
-                if package {
-                    let path = file.path().display().to_string();
-                    app.session.path = Some(path.clone());
-                    app.ui.add_recent(&path);
-                }
-            }
+            Ok(bytes) => load(app, &name, bytes, false),
             Err(e) => app.toast(format!("{} {name}: {e}", tr("Couldn't open")), true),
         }
     }
@@ -173,9 +172,9 @@ mod web {
         pick(ctx, "Images", materialcraft_engine::formats::IMAGE_EXTENSIONS, Pick::Bitmap);
     }
 
-    /// File ▸ Save: download the package as `<name>.mcraft`.
+    /// File ▸ Save: download the package as `<name>.sbs` (bitmaps embedded).
     pub fn save(app: &mut MaterialCraftApp) {
-        let name = format!("{}.mcraft", materialcraft_engine::formats::safe_file_name(&app.session.pkg.name));
+        let name = format!("{}.sbs", materialcraft_engine::formats::safe_file_name(&app.session.pkg.name));
         match materialcraft_engine::file_cmds::save_bytes(&app.session).map_err(|e| e.to_string()).and_then(|b| download(&name, &b)) {
             Ok(()) => {
                 app.session.modified = false;
