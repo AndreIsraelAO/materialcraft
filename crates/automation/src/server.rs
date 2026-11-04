@@ -126,8 +126,8 @@ pub struct PathParams {
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 pub struct SaveParams {
-    /// Forward-slash path relative to the write root (`.mcraft` is appended if missing). Omit to
-    /// save to the package's own file.
+    /// Forward-slash path relative to the write root (`.sbs` is appended unless it ends in `.sbs`
+    /// or `.mcraft`). Omit to save to the package's own file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
 }
@@ -404,12 +404,16 @@ impl MaterialcraftMcp {
         to_result(self.run("graph.node.param", params(&p)).await)
     }
 
-    #[tool(description = "Open a .mcraft package (path relative to the read root). Returns the session.")]
+    #[tool(
+        description = "Open an .sbs or .mcraft package (path relative to the read root). Returns the session; `package.warnings` lists what an SBS file holds that MaterialCraft can't read yet (missing nodes are kept as placeholders)."
+    )]
     async fn package_open(&self, Parameters(p): Parameters<PathParams>) -> Result<CallToolResult, McpError> {
         to_result(self.call("package.open", params(&p)).await)
     }
 
-    #[tool(description = "Save the package as .mcraft (path relative to the write root; omit to save to its own file).")]
+    #[tool(
+        description = "Save the package (path relative to the write root; omit to save to its own file). Saves SBS (.sbs, the main format) unless the path ends in .mcraft."
+    )]
     async fn package_save(&self, Parameters(p): Parameters<SaveParams>) -> Result<CallToolResult, McpError> {
         to_result(self.call("package.save", params(&p)).await)
     }

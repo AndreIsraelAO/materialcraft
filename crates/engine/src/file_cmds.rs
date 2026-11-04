@@ -1,6 +1,11 @@
 //! File menu: new/open/save packages, new graphs from templates, bitmap resources and texture
 //! export. Host-path commands are native only; the browser and agents use the byte-based
 //! functions (`open_bytes`, `save_bytes`, `export_outputs`).
+//!
+//! SBS (`.sbs`) is the main project format: packages save as SBS unless their file is a `.mcraft`
+//! package (the older native format, still read and written). Opening an SBS file never fails on
+//! what MaterialCraft lacks: missing nodes become placeholders and every gap is a warning in the
+//! session log (the Console) and in `session.inspect` (`package.warnings`).
 
 use serde_json::{Value as J, json};
 
@@ -23,8 +28,24 @@ pub(crate) fn specs() -> Vec<CommandSpec> {
             new_graph
         ),
         cmd!("file.newPackage", "Empty package", ["File", "New"], None, "{name?} replaces the session with an empty package", always, new_package),
-        cmd!("file.open", "Open...", ["File"], Some("Ctrl+O"), "{path} opens a .mcraft package", always, open),
-        cmd!("file.save", "Save", ["File"], Some("Ctrl+S"), "{path?} saves the package (.mcraft) to its own file or `path`", always, save),
+        cmd!(
+            "file.open",
+            "Open...",
+            ["File"],
+            Some("Ctrl+O"),
+            "{path} opens an .sbs or .mcraft package (or a .mcmat material's source); returns `warnings` for anything an SBS file holds that MaterialCraft can't read yet",
+            always,
+            open
+        ),
+        cmd!(
+            "file.save",
+            "Save",
+            ["File"],
+            Some("Ctrl+S"),
+            "{path?} saves the package to its own file or `path`: SBS (.sbs, the default; appended when `path` has no package extension) or .mcraft",
+            always,
+            save
+        ),
         cmd!("file.saveAs", "Save as...", ["File"], Some("Ctrl+Shift+S"), "{path} saves the package under a new name", always, save),
         cmd!(
             "file.export",
@@ -83,15 +104,71 @@ pub fn replace_package(s: &mut Session, pkg: Package, path: Option<String>) {
     s.reset_history();
     s.modified = false;
     s.dirty = true;
+    s.load_warnings.clear();
 }
 
-/// Open package bytes (any platform). A portable material (`.mcmat`) opens the package it was
-/// cooked from, on its graph, with no file name (saving must not overwrite the material).
+/// A package file format.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PackageFormat {
+    /// SBS XML, the main project format.
+    Sbs,
+    /// The older native zip format.
+    Mcraft,
+}
+
+impl PackageFormat {
+    /// The format a package file at `path` is saved in: `.mcraft` stays `.mcraft`, anything
+    /// else is SBS.
+    pub fn of_path(path: &str) -> PackageFormat {
+        if path.to_ascii_lowercase().ends_with(&format!(".{}", materialcraft_core::PACKAGE_EXT)) { PackageFormat::Mcraft } else { PackageFormat::Sbs }
+    }
+
+    pub fn ext(self) -> &'static str {
+        match self {
+            PackageFormat::Sbs => materialcraft_formats::sbs::SBS_EXT,
+            PackageFormat::Mcraft => materialcraft_core::PACKAGE_EXT,
+        }
+    }
+}
+
+/// `path` with the package extension appended unless it already ends in `.sbs` or `.mcraft`.
+pub fn package_path(path: &str) -> String {
+    let lower = path.to_ascii_lowercase();
+    if [PackageFormat::Sbs, PackageFormat::Mcraft].iter().any(|f| lower.ends_with(&format!(".{}", f.ext()))) {
+        path.to_string()
+    } else {
+        format!("{path}.{}", PackageFormat::Sbs.ext())
+    }
+}
+
+/// Open package bytes (any platform): SBS (by content), `.mcraft`, or a portable material
+/// (`.mcmat`), which opens the package it was cooked from, on its graph, with no file name
+/// (saving must not overwrite the material). Files an SBS package links to (bitmaps kept next
+/// to it) are not available this way: see [`open_bytes_linked`].
 pub fn open_bytes(s: &mut Session, bytes: &[u8], name: Option<String>) -> Result<()> {
+    open_bytes_linked(s, bytes, name, &|_| None)
+}
+
+/// [`open_bytes`] with `linked` loading the files an SBS package refers to by a path relative to
+/// it. Warnings (missing nodes, unreadable parameters or resources) go to the session log and
+/// [`Session::load_warnings`].
+pub fn open_bytes_linked(s: &mut Session, bytes: &[u8], name: Option<String>, linked: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<()> {
     if materialcraft_formats::material::is_material(bytes) {
         let (manifest, source) = materialcraft_formats::material::read_material(bytes)?;
         replace_package(s, materialcraft_formats::load_package(&source)?, None);
         s.graph = s.pkg.graph_by_name(&manifest.graph).map_or(0, |(i, _)| i);
+        return Ok(());
+    }
+    if materialcraft_formats::sbs::is_sbs(bytes) {
+        let read = materialcraft_formats::sbs::read_sbs(bytes, name.as_deref().unwrap_or(""), linked)?;
+        replace_package(s, read.pkg, name);
+        if !read.warnings.is_empty() {
+            s.warn(format!("{} opened with {} warning(s): what MaterialCraft can't read yet is listed below", s.pkg.name, read.warnings.len()));
+            for w in &read.warnings {
+                s.warn(w.clone());
+            }
+        }
+        s.load_warnings = read.warnings;
         return Ok(());
     }
     let pkg = materialcraft_formats::load_package(bytes)?;
@@ -99,18 +176,55 @@ pub fn open_bytes(s: &mut Session, bytes: &[u8], name: Option<String>) -> Result
     Ok(())
 }
 
-/// The package as `.mcraft` bytes.
+/// The package as SBS bytes (the main project format).
 pub fn save_bytes(s: &Session) -> Result<Vec<u8>> {
-    Ok(materialcraft_formats::save_package(&s.pkg)?)
+    save_bytes_as(s, PackageFormat::Sbs)
+}
+
+/// The package as bytes of `format`.
+pub fn save_bytes_as(s: &Session, format: PackageFormat) -> Result<Vec<u8>> {
+    Ok(match format {
+        PackageFormat::Sbs => materialcraft_formats::sbs::write_sbs(&s.pkg)?,
+        PackageFormat::Mcraft => materialcraft_formats::save_package(&s.pkg)?,
+    })
+}
+
+/// A reader for the files an SBS package at `path` links to: plain relative paths inside the
+/// package's folder only (no absolute paths, `..`, drive letters or URLs; symlinks may not leave
+/// the folder), up to 256 MB each.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn linked_files(path: &str) -> impl Fn(&str) -> Option<Vec<u8>> + use<> {
+    let dir = std::path::Path::new(path).parent().map(std::path::Path::to_path_buf).unwrap_or_default();
+    move |rel: &str| {
+        let rel = rel.trim().replace('\\', "/");
+        let p = std::path::Path::new(&rel);
+        if rel.is_empty() || rel.contains(':') || rel.starts_with('/') || p.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
+            return None;
+        }
+        let base = std::fs::canonicalize(if dir.as_os_str().is_empty() { std::path::Path::new(".") } else { dir.as_path() }).ok()?;
+        let full = std::fs::canonicalize(base.join(p)).ok()?;
+        let meta = std::fs::metadata(&full).ok()?;
+        if !full.starts_with(&base) || !meta.is_file() || meta.len() > 256 << 20 {
+            return None;
+        }
+        std::fs::read(full).ok()
+    }
+}
+
+/// Open the package file at `path` (native): SBS, `.mcraft` or `.mcmat`, with the bitmaps an SBS
+/// package keeps next to it.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn open_file(s: &mut Session, path: &str) -> Result<()> {
+    let bytes = std::fs::read(path).map_err(|e| bad("file.open", format!("{path}: {e}")))?;
+    open_bytes_linked(s, &bytes, Some(path.to_string()), &linked_files(path))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 fn open(s: &mut Session, p: &J) -> Result<J> {
     let path = strp(p, "path").ok_or_else(|| bad("file.open", "`path` is required"))?;
-    let bytes = std::fs::read(path).map_err(|e| bad("file.open", format!("{path}: {e}")))?;
-    open_bytes(s, &bytes, Some(path.to_string()))?;
+    open_file(s, path)?;
     s.log(format!("Opened {path}"));
-    Ok(json!({"name": s.pkg.name, "graphs": s.pkg.graphs.len()}))
+    Ok(json!({"name": s.pkg.name, "graphs": s.pkg.graphs.len(), "warnings": s.load_warnings}))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -121,16 +235,10 @@ fn open(_: &mut Session, _: &J) -> Result<J> {
 #[cfg(not(target_arch = "wasm32"))]
 fn save(s: &mut Session, p: &J) -> Result<J> {
     let path = match strp(p, "path") {
-        Some(path) => {
-            let mut path = path.to_string();
-            if !path.to_ascii_lowercase().ends_with(".mcraft") {
-                path.push_str(".mcraft");
-            }
-            path
-        }
+        Some(path) => package_path(path),
         None => s.path.clone().ok_or_else(|| bad("file.save", "the package has no file yet: give a `path`"))?,
     };
-    let bytes = save_bytes(s)?;
+    let bytes = save_bytes_as(s, PackageFormat::of_path(&path))?;
     materialcraft_formats::write_atomic(std::path::Path::new(&path), &bytes)?;
     s.path = Some(path.clone());
     s.modified = false;

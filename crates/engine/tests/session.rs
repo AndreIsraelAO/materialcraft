@@ -86,6 +86,84 @@ fn package_save_and_open_round_trip() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// SBS is the main project format: a path without a package extension saves as `.sbs`, and an
+/// SBS file opens back to the same package. `.mcraft` still saves and opens.
+#[test]
+fn sbs_is_the_default_save_format_and_mcraft_still_works() {
+    let mut s = sample_session();
+    let dir = std::env::temp_dir().join(format!("mc-sbs-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let before = s.pkg.clone();
+    let r = run(&mut s, "file.save", json!({"path": dir.join("bricks").to_str().unwrap()}));
+    let sbs = r["path"].as_str().unwrap().to_string();
+    assert!(sbs.ends_with("bricks.sbs"), "{sbs}");
+    assert!(std::fs::read(&sbs).unwrap().starts_with(b"<?xml"));
+    run(&mut s, "file.newPackage", json!({}));
+    let r = run(&mut s, "file.open", json!({"path": sbs}));
+    assert_eq!(r["warnings"], json!([]));
+    assert_eq!(s.pkg.graphs, before.graphs);
+    assert_eq!(s.pkg.resources, before.resources);
+    // Saving again goes back to the same .sbs file.
+    assert_eq!(run(&mut s, "file.save", json!({}))["path"], json!(sbs));
+    // .mcraft: saved as a zip and still opened.
+    let mc = dir.join("bricks.mcraft");
+    run(&mut s, "file.save", json!({"path": mc.to_str().unwrap()}));
+    assert!(std::fs::read(&mc).unwrap().starts_with(b"PK"));
+    run(&mut s, "file.newPackage", json!({}));
+    run(&mut s, "file.open", json!({"path": mc.to_str().unwrap()}));
+    assert_eq!(s.pkg.graphs, before.graphs);
+    assert_eq!(run(&mut s, "file.save", json!({}))["path"], json!(mc.to_str().unwrap()));
+    assert!(std::fs::read(&mc).unwrap().starts_with(b"PK"), "an opened .mcraft stays .mcraft");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// An SBS file full of nodes MaterialCraft doesn't have opens anyway: the gaps are warnings in
+/// the log and in inspect, the missing nodes are placeholders that cook to an error, and every
+/// command still works on the graph.
+#[test]
+fn an_sbs_file_with_missing_nodes_opens_softly() {
+    let sample = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/sbs/all_nodes.sbs");
+    let mut s = sample_session();
+    s.preview_size = Some(32);
+    let r = run(&mut s, "file.open", json!({"path": sample.to_str().unwrap()}));
+    let warnings = r["warnings"].as_array().unwrap();
+    assert!(warnings.len() > 100, "{} warnings", warnings.len());
+    assert!(warnings.iter().any(|w| w.as_str().unwrap().contains("missing node")));
+    assert!(s.log.iter().filter(|l| l.starts_with(materialcraft_engine::WARNING_PREFIX)).count() > 100);
+    let inspect = run(&mut s, "session.inspect", json!({}));
+    assert_eq!(inspect["package"]["warnings"].as_array().map(Vec::len), Some(warnings.len()));
+    // The bitmap kept next to the package was found.
+    assert!(s.pkg.resources.iter().any(|r| r.name == "Untitled_Bitmap" && !r.bytes.is_empty()));
+    s.cook();
+    let g = s.graph().unwrap();
+    let placeholder = g.nodes.iter().find(|n| n.def == materialcraft_engine::core::MISSING_NODE).unwrap().id;
+    assert!(s.cooked.nodes[&placeholder].error.as_deref().unwrap_or("").contains("not in MaterialCraft's library"));
+    let mapped = g.nodes.iter().find(|n| n.def == "perlin_noise").unwrap().id;
+    assert!(s.cooked.nodes[&mapped].error.is_none());
+    // Commands on a placeholder are errors or no-ops, never panics.
+    s.selection = vec![placeholder];
+    for (id, p) in [
+        ("graph.node.param", json!({"id": placeholder.0, "param": "scale", "value": 2})),
+        ("edit.copy", json!({})),
+        ("edit.paste", json!({})),
+        ("edit.duplicate", json!({})),
+        ("graph.node.delete", json!({"ids": [placeholder.0]})),
+        ("edit.undo", json!({})),
+    ] {
+        let _ = execute(&mut s, id, &p);
+    }
+    for spec in command_specs() {
+        if spec.id.starts_with("file.") {
+            continue;
+        }
+        let _ = execute(&mut s, spec.id, &json!({}));
+    }
+    s.cook();
+    // A clean package clears the warnings.
+    run(&mut s, "file.newPackage", json!({}));
+    assert!(s.load_warnings.is_empty());
+}
+
 /// Every command, run with empty and hostile params, returns Ok or Err but never panics.
 #[test]
 fn panic_hunt() {

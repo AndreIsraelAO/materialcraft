@@ -614,14 +614,24 @@ fn canvas(app: &mut MaterialCraftApp, ui: &mut Ui) {
 
     search_popup(app, ui, &cam);
     comment_editor(app, ui);
-    if let Some(e) = cooked_error_count(app) {
-        painter.text(rect.right_bottom() - vec2(8.0, 8.0), Align2::RIGHT_BOTTOM, e, FontId::proportional(11.0), tk.danger);
+    let (failed, missing) = cooked_error_count(app);
+    let mut at = rect.right_bottom() - vec2(8.0, 8.0);
+    if failed > 0 {
+        let r = painter.text(at, Align2::RIGHT_BOTTOM, format!("{} {failed} node(s) failed", icon::WARNING), FontId::proportional(11.0), tk.danger);
+        at.y = r.top() - 2.0;
+    }
+    if missing > 0 {
+        // Placeholders for nodes an SBS file uses that MaterialCraft doesn't have: a soft warning.
+        painter.text(at, Align2::RIGHT_BOTTOM, format!("{} {missing} missing node(s), see the Console", icon::WARNING), FontId::proportional(11.0), tk.warning);
     }
 }
 
-fn cooked_error_count(app: &MaterialCraftApp) -> Option<String> {
-    let n = app.session.cooked.nodes.values().filter(|r| r.error.is_some()).count();
-    (n > 0).then(|| format!("{} {n} node(s) failed", icon::WARNING))
+/// (Nodes whose cook failed, placeholders for missing SBS nodes) in the last cook.
+fn cooked_error_count(app: &MaterialCraftApp) -> (usize, usize) {
+    let missing = |id: &NodeId| app.session.graph().ok().and_then(|g| g.node(*id).ok()).is_some_and(|n| n.def == materialcraft_engine::core::MISSING_NODE);
+    let errors: Vec<&NodeId> = app.session.cooked.nodes.iter().filter(|(_, r)| r.error.is_some()).map(|(id, _)| id).collect();
+    let m = errors.iter().filter(|id| missing(id)).count();
+    (errors.len() - m, m)
 }
 
 fn grid(p: &egui::Painter, cam: &Cam, rect: Rect) {

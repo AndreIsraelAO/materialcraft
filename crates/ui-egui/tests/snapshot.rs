@@ -85,6 +85,13 @@ fn snapshots() {
     h.state_mut().ui.frame_all = true;
     settle(&mut h, 40);
     save(&mut h, &dir, "function-editor");
+
+    // An SBS file with nodes MaterialCraft doesn't have: placeholders on the canvas, the warnings
+    // in the Console, which comes forward by itself.
+    let sample = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/sbs/all_nodes.sbs");
+    materialcraft_ui_egui::windows::open_path(h.state_mut(), sample.to_str().unwrap());
+    settle(&mut h, 60);
+    save(&mut h, &dir, "sbs-warnings");
 }
 
 /// Steady-state UI build time per frame with each panel closed in turn (release):

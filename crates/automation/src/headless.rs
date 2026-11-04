@@ -138,21 +138,34 @@ impl Headless {
         batch_reply(results, None)
     }
 
-    /// Open a `.mcraft` package.
+    /// Open an `.sbs` or `.mcraft` package (or a `.mcmat` material's source). Bitmaps an SBS
+    /// package links to are read from beside it, through the same file access rules.
     pub fn open(&mut self, path: &str) -> Result<Value, AutomationError> {
         let bytes = self.read(path)?;
-        file_cmds::open_bytes(&mut self.session, &bytes, Some(path.to_string()))?;
+        let dir = path.replace('\\', "/").rsplit_once('/').map(|(d, _)| format!("{d}/")).unwrap_or_default();
+        let mut session = std::mem::replace(&mut self.session, Session::new(materialcraft_engine::core::Package::new("")));
+        let linked = |rel: &str| -> Option<Vec<u8>> {
+            let rel = rel.trim().replace('\\', "/");
+            let safe = !rel.is_empty() && !rel.contains(':') && !rel.starts_with('/') && rel.split('/').all(|c| !c.is_empty() && c != "." && c != "..");
+            if !safe {
+                return None;
+            }
+            self.read(&format!("{dir}{rel}")).ok()
+        };
+        let result = file_cmds::open_bytes_linked(&mut session, &bytes, Some(path.to_string()), &linked);
+        self.session = session;
+        result?;
         Ok(self.inspect())
     }
 
-    /// Save the package (`.mcraft` appended when missing) to `path` or its own file.
+    /// Save the package to `path` or its own file: SBS unless the file is a `.mcraft` package
+    /// (`.sbs` is appended when `path` has no package extension).
     pub fn save(&mut self, path: Option<&str>) -> Result<Value, AutomationError> {
         let path = match path {
-            Some(p) if p.to_ascii_lowercase().ends_with(".mcraft") => p.to_string(),
-            Some(p) => format!("{p}.mcraft"),
+            Some(p) => file_cmds::package_path(p),
             None => self.session.path.clone().ok_or_else(|| bad("the package has no file yet: give a `path`"))?,
         };
-        let bytes = file_cmds::save_bytes(&self.session)?;
+        let bytes = file_cmds::save_bytes_as(&self.session, file_cmds::PackageFormat::of_path(&path))?;
         self.write(&path, &bytes)?;
         self.session.path = Some(path.clone());
         self.session.modified = false;
