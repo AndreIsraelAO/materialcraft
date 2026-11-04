@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 use egui::vec2;
-use egui_kittest::Harness;
+use egui_kittest::{Harness, kittest::Queryable};
 use materialcraft_ui_egui::{MaterialCraftApp, UiState};
 use serde_json::json;
 
@@ -31,6 +31,34 @@ fn save(h: &mut Harness<'static, MaterialCraftApp>, dir: &std::path::Path, name:
     let img = h.render().expect("render");
     img.save(dir.join(format!("{name}.png"))).expect("save");
     println!("wrote {}", dir.join(format!("{name}.png")).display());
+}
+
+/// The startup graph stays empty through real UI frames; templates are still available on demand.
+#[test]
+#[ignore = "requires an offscreen GPU; run explicitly with --ignored"]
+fn empty_startup_can_create_a_template() {
+    let app = MaterialCraftApp::headless(materialcraft_engine::new_session(), UiState::default());
+    let mut h = harness(app, 1600.0, 960.0);
+    settle(&mut h, 40);
+    assert_eq!(h.state().session.pkg.graphs.len(), 1);
+    assert!(h.state().session.graph().unwrap().nodes.is_empty());
+    assert!(h.state().graph.rects.is_empty());
+    if let Some(dir) = std::env::var_os("MC_SNAPSHOT_DIR").map(std::path::PathBuf::from) {
+        std::fs::create_dir_all(&dir).unwrap();
+        save(&mut h, &dir, "empty-startup");
+    }
+    h.get_by_label("New graph...").click();
+    settle(&mut h, 4);
+    h.get_by_label("Brick wall").click();
+    settle(&mut h, 4);
+    h.get_by_label("Create").click();
+    settle(&mut h, 40);
+    assert_eq!(h.state().session.pkg.graphs.len(), 2);
+    assert!(!h.state().session.graph().unwrap().nodes.is_empty());
+    assert!(!h.state().graph.rects.is_empty());
+    if let Some(dir) = std::env::var_os("MC_SNAPSHOT_DIR").map(std::path::PathBuf::from) {
+        save(&mut h, &dir, "chosen-template");
+    }
 }
 
 #[test]
