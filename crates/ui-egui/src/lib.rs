@@ -14,6 +14,7 @@ pub mod explorer;
 pub mod function_editor;
 pub mod graph_view;
 pub mod i18n;
+pub mod levels_editor;
 pub mod library;
 pub mod menus;
 pub mod properties;

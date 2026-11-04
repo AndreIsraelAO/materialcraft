@@ -106,7 +106,9 @@ ray-traced ambient occlusion and a shadowed key light).
 
 - **Familiar.** The layout, panels, menus and gestures material artists already know: a package
   explorer, a library of nodes with previews, the node graph with live thumbnails, a 3D view, a 2D
-  view and a properties panel with base and specific parameters. Space opens the node search.
+  view and a properties panel with base and specific parameters (Levels is edited over a
+  histogram of its input, see [docs/levels-editor.md](docs/levels-editor.md)). Space opens the
+  node search.
 - **Fast.** Every node cooks on every CPU core, and a content-addressed cache means an edit
   re-cooks only what lies downstream: the brick wall sample cooks in about 40 ms at preview size.
   Cooking runs on a worker thread, so the UI never waits.

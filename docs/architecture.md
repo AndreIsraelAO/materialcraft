@@ -71,6 +71,9 @@ on the CPU: half resolution while the camera moves, 2×2 supersampled when it re
 `crates/ui-egui/tests/snapshot.rs` renders the real UI offscreen with egui_kittest + wgpu for visual
 checks and README screenshots.
 
+The properties panel builds every parameter editor from the node catalog; the Levels node adds a
+histogram editor with range handles on top of its sliders ([levels-editor.md](levels-editor.md)).
+
 ## Files
 
 SBS (`.sbs`, `formats/src/sbs.rs`) is the main project format: XML with the package's graphs, nodes,
