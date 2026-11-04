@@ -38,8 +38,8 @@ pub fn start() {
 
 async fn run(canvas: web_sys::HtmlCanvasElement) -> Result<(), String> {
     // The WebAssembly has downloaded and compiled when this runs.
-    step(0.5, "Preparing the sample package…").await;
-    let session = materialcraft_engine::sample_session();
+    step(0.5, "Preparing a new package…").await;
+    let session = materialcraft_engine::new_session();
     step(0.8, "Starting the renderer…").await;
     let mut options = eframe::WebOptions::default();
     if query().contains("webgl")

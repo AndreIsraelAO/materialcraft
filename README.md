@@ -131,7 +131,7 @@ ray-traced ambient occlusion and a shadowed key light).
 git clone https://github.com/storytold/materialcraft
 cd materialcraft
 
-cargo run --release -p materialcraft                          # desktop app (opens the brick wall sample)
+cargo run --release -p materialcraft                          # desktop app (opens an empty graph)
 cargo run --release -p materialcraft -- package.mcraft        # open a package
 cargo run --release -p materialcraft -- --control 7878        # + JSON control channel
 cargo run --release -p materialcraft-cli -- mcp               # MCP server (stdio)
@@ -144,7 +144,7 @@ cd apps/materialcraft-web && trunk serve                      # web build
 cargo xtask ci                                                # fmt, clippy, tests, layering, wasm
 ```
 
-You need Rust 1.95 or newer. The app opens with the brick wall sample; **File ▸ New ▸ Graph...**
+You need Rust 1.95 or newer. The app opens with an empty graph in a new package; **File ▸ New ▸ Graph...**
 starts from a PBR template or one of the sample materials.
 
 ### Use it from Claude Code and other agents
