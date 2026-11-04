@@ -54,6 +54,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(crate::graph_cmds::specs());
         v.extend(crate::node_cmds::specs());
         v.extend(crate::view_cmds::specs());
+        v.extend(crate::wire_cmds::specs());
         v
     })
 }

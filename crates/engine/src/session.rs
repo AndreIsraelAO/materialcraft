@@ -36,6 +36,11 @@ pub struct View3d {
     pub height_scale: f32,
     pub show_axis: bool,
     pub show_grid: bool,
+    /// See through the mesh where the material's alpha (opacity output, else base color alpha)
+    /// is below one.
+    pub transparency: bool,
+    /// Show the material's alpha channel on the mesh instead of the lit material.
+    pub alpha_view: bool,
 }
 
 impl Default for View3d {
@@ -53,6 +58,8 @@ impl Default for View3d {
             height_scale: 0.012,
             show_axis: false,
             show_grid: false,
+            transparency: true,
+            alpha_view: false,
         }
     }
 }

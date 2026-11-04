@@ -17,6 +17,7 @@ pub mod node_cmds;
 pub mod samples;
 pub mod session;
 pub mod view_cmds;
+pub mod wire_cmds;
 
 pub use commands::{CommandSpec, command_specs, execute, find};
 pub use session::{CameraPrefs, Clip, Session, View2d, View3d, WARNING_PREFIX};
