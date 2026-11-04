@@ -2307,7 +2307,7 @@ checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
 name = "materialcraft"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "eframe",
  "egui",
@@ -2321,7 +2321,7 @@ dependencies = [
 
 [[package]]
 name = "materialcraft-automation"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64 0.22.1",
  "cap-std",
@@ -2341,7 +2341,7 @@ dependencies = [
 
 [[package]]
 name = "materialcraft-cli"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "materialcraft-automation",
  "materialcraft-engine",
@@ -2352,7 +2352,7 @@ dependencies = [
 
 [[package]]
 name = "materialcraft-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -2361,7 +2361,7 @@ dependencies = [
 
 [[package]]
 name = "materialcraft-engine"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "materialcraft-core",
  "materialcraft-eval",
@@ -2376,7 +2376,7 @@ dependencies = [
 
 [[package]]
 name = "materialcraft-eval"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "materialcraft-core",
  "materialcraft-image",
@@ -2386,7 +2386,7 @@ dependencies = [
 
 [[package]]
 name = "materialcraft-formats"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64 0.22.1",
  "flate2",
@@ -2406,7 +2406,7 @@ dependencies = [
 
 [[package]]
 name = "materialcraft-geom"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "glam 0.30.10",
  "mikktspace",
@@ -2417,7 +2417,7 @@ dependencies = [
 
 [[package]]
 name = "materialcraft-image"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "rayon",
  "thiserror 2.0.21",
@@ -2425,7 +2425,7 @@ dependencies = [
 
 [[package]]
 name = "materialcraft-nodes"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "materialcraft-core",
  "materialcraft-image",
@@ -2434,7 +2434,7 @@ dependencies = [
 
 [[package]]
 name = "materialcraft-render"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "materialcraft-geom",
  "materialcraft-image",
@@ -2443,7 +2443,7 @@ dependencies = [
 
 [[package]]
 name = "materialcraft-ui-egui"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64 0.22.1",
  "craft-ui",
@@ -2467,7 +2467,7 @@ dependencies = [
 
 [[package]]
 name = "materialcraft-web"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "eframe",
  "js-sys",
@@ -5244,7 +5244,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xtask"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde_json",
 ]
