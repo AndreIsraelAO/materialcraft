@@ -108,6 +108,8 @@ fn export_size_keeps_proportions_and_clamps() {
     let parsed = |size: Value| materialcraft_engine::file_cmds::export_params(&s, &json!({"size": size})).unwrap().4;
     assert_eq!(parsed(json!(0)), None);
     assert_eq!(parsed(json!(u64::MAX)), Some(u32::MAX));
+    s.pkg.graphs[0].size = [u32::MAX, u32::MAX];
+    assert!(dims(&s, json!(32)).iter().all(|d| *d == (32, 32)));
 }
 
 /// A scratch folder for one test, removed when dropped.

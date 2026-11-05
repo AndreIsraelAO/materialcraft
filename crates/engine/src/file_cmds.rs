@@ -271,8 +271,9 @@ pub fn export_outputs(s: &Session, gi: usize, ext: &str, pattern: &str, depth: O
         let g = pkg.graph_mut(gi)?;
         // The larger side becomes `px`; the other keeps its proportion.
         let target = 31 - px.clamp(16, 8192).leading_zeros();
-        let larger = g.size[0].max(g.size[1]);
-        g.size = g.size.map(|l| (l + target).saturating_sub(larger).max(4));
+        let bounded = g.size.map(|l| l.clamp(4, 13));
+        let larger = bounded[0].max(bounded[1]);
+        g.size = bounded.map(|l| (l + target).saturating_sub(larger).max(4));
     }
     let g = pkg.graph(gi)?;
     let dec = s.resource_decoder();

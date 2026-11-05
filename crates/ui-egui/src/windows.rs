@@ -229,7 +229,10 @@ fn export(app: &mut MaterialCraftApp, ctx: &egui::Context) {
                 ui.selectable_value(&mut app.ui.export_depth, d, tr(l));
             }
         });
-        let graph_size = app.session.graph().map_or(String::new(), |g| format!("{} ({} x {})", tr("Graph's size"), 1u32 << g.size[0], 1u32 << g.size[1]));
+        let graph_size = app.session.graph().map_or(String::new(), |g| {
+            let [w, h] = g.size_px();
+            format!("{} ({w} x {h})", tr("Graph's size"))
+        });
         let size_label = match app.ui.export_size {
             0 => graph_size.clone(),
             px => format!("{px} px"),
