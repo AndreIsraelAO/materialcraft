@@ -271,8 +271,17 @@ fn export(app: &mut MaterialCraftApp, ctx: &egui::Context) {
 
 fn preferences(app: &mut MaterialCraftApp, ctx: &egui::Context) {
     let mut open = true;
-    modal(ctx, "prefs", tr("Preferences"), &mut open, vec2(380.0, 300.0), |ui| {
+    modal(ctx, "prefs", tr("Preferences"), &mut open, vec2(380.0, 340.0), |ui| {
         let p = &mut app.ui.prefs;
+        let current_lang = crate::i18n::current();
+        crate::widgets::combo(ui, tr("Language"), current_lang.name, |ui| {
+            for l in &crate::i18n::LANGUAGES {
+                if ui.selectable_label(p.language == l.code, l.name).clicked() {
+                    p.language = l.code.to_owned();
+                    crate::i18n::set_language(&p.language);
+                }
+            }
+        });
         crate::widgets::combo(ui, tr("Brightness"), tr(p.brightness.label()), |ui| {
             for b in Brightness::ALL {
                 ui.selectable_value(&mut p.brightness, b, tr(b.label()));

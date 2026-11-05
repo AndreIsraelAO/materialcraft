@@ -2459,6 +2459,7 @@ dependencies = [
  "rfd",
  "serde",
  "serde_json",
+ "sys-locale",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
