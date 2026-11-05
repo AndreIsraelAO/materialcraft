@@ -458,14 +458,22 @@ fn home(app: &mut MaterialCraftApp, ctx: &egui::Context) {
 
 pub fn console(app: &mut MaterialCraftApp, ui: &mut Ui) {
     let tk = Tokens::get(ui.ctx());
+    let console_line = |text: String, color: Color32| RichText::new(text).monospace().size(11.0).color(color);
+
     egui::ScrollArea::vertical().stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
-        for l in &app.session.log {
-            ui.label(RichText::new(l).monospace().size(11.0).color(tk.text));
+        for line in &app.session.log {
+            let warning = line.starts_with(materialcraft_engine::WARNING_PREFIX);
+            ui.label(console_line(line.clone(), if warning { tk.warning } else { tk.text }));
         }
-        for (id, r) in &app.session.cooked.nodes {
-            if let Some(e) = &r.error {
-                ui.label(RichText::new(format!("node {}: {e}", id.0)).monospace().size(11.0).color(tk.danger));
-            }
+
+        // Placeholders for missing SBS nodes are already listed in the warnings, so they get one line
+        let (failed, placeholders) = app.session.cook_failures();
+        for (id, error) in failed {
+            ui.label(console_line(format!("node {}: {error}", id.0), tk.danger));
+        }
+        if placeholders > 0 {
+            let text = format!("{placeholders} {}", tr("placeholder node(s) stand in for nodes MaterialCraft doesn't have yet (see the warnings above)"));
+            ui.label(console_line(text, tk.warning));
         }
     });
 }
@@ -519,8 +527,17 @@ pub fn function_summary(app: &mut MaterialCraftApp, ui: &mut Ui, node: NodeId, p
     });
 }
 
-/// Extensions File ▸ Open reads: packages and portable materials (opening their source package).
-pub const OPEN_EXTS: &[&str] = &["mcraft", MATERIAL_EXT];
+/// Extensions File ▸ Open reads: SBS (the main format) and `.mcraft` packages, and materials (their source package).
+pub const OPEN_EXTS: &[&str] = &["sbs", "mcraft", MATERIAL_EXT];
+
+/// After a package opened with warnings (an SBS file using nodes MaterialCraft lacks, say), bring the Console forward.
+pub fn after_open(app: &mut MaterialCraftApp) {
+    let warning_count = app.session.load_warnings.len();
+    if warning_count > 0 {
+        app.ui.dock.focus(crate::docking::Panel::Console);
+        app.toast(format!("{} {warning_count} {}", tr("Opened with"), tr("warnings: see the Console")), false);
+    }
+}
 
 /// File menu actions that need a file dialog. Returns true when handled.
 pub fn file_action(app: &mut MaterialCraftApp, ctx: &egui::Context, id: &str) -> bool {
@@ -530,7 +547,7 @@ pub fn file_action(app: &mut MaterialCraftApp, ctx: &egui::Context, id: &str) ->
     {
         match id {
             "file.open" => {
-                if let Some(p) = rfd::FileDialog::new().add_filter("MaterialCraft package or material", OPEN_EXTS).pick_file() {
+                if let Some(p) = rfd::FileDialog::new().add_filter("SBS or MaterialCraft package, or material", OPEN_EXTS).pick_file() {
                     open_path(app, &p.display().to_string());
                 }
                 true
@@ -544,9 +561,14 @@ pub fn file_action(app: &mut MaterialCraftApp, ctx: &egui::Context, id: &str) ->
                 true
             }
             "file.save" | "file.saveAs" => {
-                let name = format!("{}.mcraft", materialcraft_engine::formats::safe_file_name(&app.session.pkg.name));
-                if let Some(p) = rfd::FileDialog::new().set_file_name(name).add_filter("MaterialCraft package", &["mcraft"]).save_file() {
-                    let path = p.display().to_string();
+                let name = format!("{}.sbs", materialcraft_engine::formats::safe_file_name(&app.session.pkg.name));
+                if let Some(p) = rfd::FileDialog::new()
+                    .set_file_name(name)
+                    .add_filter("SBS package", &["sbs"])
+                    .add_filter("MaterialCraft package (older format)", &["mcraft"])
+                    .save_file()
+                {
+                    let path = materialcraft_engine::file_cmds::package_path(&p.display().to_string());
                     if app.run("file.save", json!({"path": path})).is_some() {
                         app.ui.add_recent(&path);
                         app.toast(format!("{} {path}", tr("Saved")), false);
@@ -607,5 +629,6 @@ pub fn open_path(app: &mut MaterialCraftApp, path: &str) {
         app.ui.add_recent(path);
         app.ui.frame_all = true;
         app.toast(format!("{} {path}", tr("Opened")), false);
+        after_open(app);
     }
 }

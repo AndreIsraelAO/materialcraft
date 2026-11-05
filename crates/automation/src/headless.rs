@@ -63,6 +63,21 @@ pub struct Headless {
     light: Option<Lighting>,
 }
 
+/// Read a file under `fs`'s access rules.
+fn read_file(fs: &Filesystem, path: &str) -> Result<Vec<u8>, AutomationError> {
+    match fs {
+        Filesystem::Denied => Err(bad("file access is not granted: start the server with --read-root <dir>")),
+        Filesystem::TrustedLocal => {
+            let len = std::fs::metadata(path).map_err(|e| AutomationError::Io(format!("cannot read {path}: {e}")))?.len();
+            if len > MAX_READ_BYTES {
+                return Err(bad(format!("{path} is {len} bytes (limit {MAX_READ_BYTES})")));
+            }
+            std::fs::read(path).map_err(|e| AutomationError::Io(format!("cannot read {path}: {e}")))
+        }
+        Filesystem::Workspace(w) => w.read(path),
+    }
+}
+
 impl Headless {
     pub fn new(session: Session, fs: Filesystem) -> Headless {
         Headless { session, fs, scene: None, light: None }
@@ -78,17 +93,7 @@ impl Headless {
     }
 
     fn read(&self, path: &str) -> Result<Vec<u8>, AutomationError> {
-        match &self.fs {
-            Filesystem::Denied => Err(bad("file access is not granted: start the server with --read-root <dir>")),
-            Filesystem::TrustedLocal => {
-                let len = std::fs::metadata(path).map_err(|e| AutomationError::Io(format!("cannot read {path}: {e}")))?.len();
-                if len > MAX_READ_BYTES {
-                    return Err(bad(format!("{path} is {len} bytes (limit {MAX_READ_BYTES})")));
-                }
-                std::fs::read(path).map_err(|e| AutomationError::Io(format!("cannot read {path}: {e}")))
-            }
-            Filesystem::Workspace(w) => w.read(path),
-        }
+        read_file(&self.fs, path)
     }
 
     fn write(&self, path: &str, bytes: &[u8]) -> Result<(), AutomationError> {
@@ -138,21 +143,33 @@ impl Headless {
         batch_reply(results, None)
     }
 
-    /// Open a `.mcraft` package.
+    /// Open an `.sbs` or `.mcraft` package (or a `.mcmat` material's source), reading linked bitmaps under the same access rules.
     pub fn open(&mut self, path: &str) -> Result<Value, AutomationError> {
         let bytes = self.read(path)?;
-        file_cmds::open_bytes(&mut self.session, &bytes, Some(path.to_string()))?;
+        let folder = path.replace('\\', "/").rsplit_once('/').map(|(folder, _)| format!("{folder}/")).unwrap_or_default();
+        let fs = &self.fs;
+        let linked = |relative: &str| -> Option<Vec<u8>> {
+            let relative = relative.trim().replace('\\', "/");
+            let plain = !relative.is_empty() && !relative.contains(':') && !relative.starts_with('/');
+            let inside = relative.split('/').all(|part| !part.is_empty() && part != "." && part != "..");
+            if !plain || !inside {
+                return None;
+            }
+            read_file(fs, &format!("{folder}{relative}")).ok()
+        };
+
+        file_cmds::open_bytes_linked(&mut self.session, &bytes, Some(path.to_string()), &linked)?;
         Ok(self.inspect())
     }
 
-    /// Save the package (`.mcraft` appended when missing) to `path` or its own file.
+    /// Save to `path` (`.sbs` appended without a package extension) or the package's own file; SBS unless it is a `.mcraft`.
     pub fn save(&mut self, path: Option<&str>) -> Result<Value, AutomationError> {
         let path = match path {
-            Some(p) if p.to_ascii_lowercase().ends_with(".mcraft") => p.to_string(),
-            Some(p) => format!("{p}.mcraft"),
-            None => self.session.path.clone().ok_or_else(|| bad("the package has no file yet: give a `path`"))?,
+            Some(p) => file_cmds::package_path(p),
+            None => self.session.path.clone().ok_or_else(|| bad("the package has no file yet (new, or opened from another program): give a `path`"))?,
         };
-        let bytes = file_cmds::save_bytes(&self.session)?;
+
+        let bytes = file_cmds::save_bytes_as(&self.session, file_cmds::PackageFormat::of_path(&path))?;
         self.write(&path, &bytes)?;
         self.session.path = Some(path.clone());
         self.session.modified = false;
@@ -243,6 +260,8 @@ impl Headless {
             height_scale: v.height_scale,
             show_env: false,
             supersample: 2,
+            transparency: v.transparency,
+            alpha_view: v.alpha_view,
             ..Settings::default()
         };
         let (w, h) = (o.width.unwrap_or(1024).clamp(16, max), o.height.unwrap_or(768).clamp(16, max));

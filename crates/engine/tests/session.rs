@@ -86,6 +86,135 @@ fn package_save_and_open_round_trip() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A scratch folder for one test, removed when dropped.
+struct TempDir(std::path::PathBuf);
+
+impl TempDir {
+    fn new(name: &str) -> TempDir {
+        let dir = std::env::temp_dir().join(format!("mc-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        TempDir(dir)
+    }
+
+    fn file(&self, name: &str) -> String {
+        self.0.join(name).to_str().unwrap().to_string()
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// A path without a package extension saves as `.sbs` and opens back exactly; `.mcraft` still saves and opens.
+#[test]
+fn sbs_is_the_default_save_format_and_mcraft_still_works() {
+    let dir = TempDir::new("sbs-default");
+    let mut s = sample_session();
+    let before = s.pkg.clone();
+
+    let sbs = run(&mut s, "file.save", json!({"path": dir.file("bricks")}))["path"].as_str().unwrap().to_string();
+    assert!(sbs.ends_with("bricks.sbs"), "{sbs}");
+    assert!(std::fs::read(&sbs).unwrap().starts_with(b"<?xml"));
+    run(&mut s, "file.newPackage", json!({}));
+    let opened = run(&mut s, "file.open", json!({"path": sbs}));
+    assert_eq!(opened["warnings"], json!([]));
+    assert_eq!(s.pkg.graphs, before.graphs);
+    assert_eq!(s.pkg.resources, before.resources);
+    assert_eq!(run(&mut s, "file.save", json!({}))["path"], json!(sbs));
+
+    let mcraft = dir.file("bricks.mcraft");
+    run(&mut s, "file.save", json!({"path": mcraft}));
+    assert!(std::fs::read(&mcraft).unwrap().starts_with(b"PK"));
+    run(&mut s, "file.newPackage", json!({}));
+    run(&mut s, "file.open", json!({"path": mcraft}));
+    assert_eq!(s.pkg.graphs, before.graphs);
+    assert_eq!(run(&mut s, "file.save", json!({}))["path"], json!(mcraft));
+    assert!(std::fs::read(&mcraft).unwrap().starts_with(b"PK"), "an opened .mcraft stays .mcraft");
+}
+
+/// Saving an SBS file another program wrote must not overwrite it: MaterialCraft can't write back what it couldn't read.
+#[test]
+fn saving_an_sbs_file_from_another_program_needs_a_new_name() {
+    let dir = TempDir::new("sbs-theirs");
+    let theirs = dir.file("theirs.sbs");
+    let xml = r#"<?xml version="1.0"?><package><content><graph><identifier v="G"/><compNodes><compNode><uid v="1"/><compImplementation><compFilter><filter v="curve"/><parameters><parameter><name v="curveluminance"/><paramValue><constantValueString v="POINTS"/></paramValue></parameter></parameters></compFilter></compImplementation></compNode></compNodes></graph><function><identifier v="their_function"/></function></content></package>"#;
+    std::fs::write(&theirs, xml).unwrap();
+    let mut s = sample_session();
+
+    let opened = run(&mut s, "file.open", json!({"path": theirs}));
+    assert_eq!(opened["path"], json!(null));
+    assert!(execute(&mut s, "file.save", &json!({})).is_err());
+    assert_eq!(std::fs::read_to_string(&theirs).unwrap(), xml, "the original is untouched");
+
+    // Saved under a new name it becomes a MaterialCraft file, which saves in place from then on
+    let mine = run(&mut s, "file.save", json!({"path": dir.file("mine.sbs")}))["path"].as_str().unwrap().to_string();
+    run(&mut s, "file.open", json!({"path": mine}));
+    assert_eq!(run(&mut s, "file.save", json!({}))["path"], json!(mine));
+}
+
+#[test]
+fn a_broken_sbs_file_reports_an_sbs_error_and_a_renamed_mcraft_opens() {
+    let dir = TempDir::new("sbs-broken");
+    let broken = dir.file("broken.sbs");
+    std::fs::write(&broken, b"\xff\xfe<\x00p\x00").unwrap();
+    let mut s = sample_session();
+
+    let error = execute(&mut s, "file.open", &json!({"path": broken})).unwrap_err().to_string();
+    assert!(error.contains("SBS"), "{error}");
+
+    let renamed = dir.file("renamed.sbs");
+    std::fs::write(&renamed, materialcraft_engine::file_cmds::save_bytes_as(&s, materialcraft_engine::file_cmds::PackageFormat::Mcraft).unwrap()).unwrap();
+    run(&mut s, "file.open", json!({"path": renamed}));
+}
+
+/// An SBS file full of nodes MaterialCraft lacks opens: gaps are warnings, placeholders cook to an error, commands still work.
+#[test]
+fn an_sbs_file_with_missing_nodes_opens_softly() {
+    let sample = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/sbs/all_nodes.sbs");
+    let mut s = sample_session();
+    s.preview_size = Some(32);
+
+    let opened = run(&mut s, "file.open", json!({"path": sample.to_str().unwrap()}));
+    let warnings = opened["warnings"].as_array().unwrap();
+    assert!(warnings.len() > 100, "{} warnings", warnings.len());
+    assert!(warnings.iter().any(|w| w.as_str().unwrap().contains("missing node")));
+    assert!(s.log.iter().filter(|l| l.starts_with(materialcraft_engine::WARNING_PREFIX)).count() > 100);
+    let inspect = run(&mut s, "session.inspect", json!({}));
+    assert_eq!(inspect["package"]["warnings"].as_array().map(Vec::len), Some(warnings.len()));
+    assert!(s.pkg.resources.iter().any(|r| r.name == "Untitled_Bitmap" && !r.bytes.is_empty()), "the bitmap next to the package loads");
+
+    s.cook();
+    let graph = s.graph().unwrap();
+    let placeholder = graph.nodes.iter().find(|n| n.def == materialcraft_engine::core::MISSING_NODE).unwrap().id;
+    let mapped = graph.nodes.iter().find(|n| n.def == "perlin_noise").unwrap().id;
+    assert!(s.cooked.nodes[&placeholder].error.as_deref().unwrap_or("").contains("not in MaterialCraft's library"));
+    assert!(s.cooked.nodes[&mapped].error.is_none());
+    let (failed, placeholders) = s.cook_failures();
+    assert!(placeholders > 300 && failed.len() < 10, "{} failed, {placeholders} placeholders", failed.len());
+
+    // Commands on a placeholder are errors or no-ops, never panics
+    s.selection = vec![placeholder];
+    for (id, params) in [
+        ("graph.node.param", json!({"id": placeholder.0, "param": "scale", "value": 2})),
+        ("edit.copy", json!({})),
+        ("edit.paste", json!({})),
+        ("edit.duplicate", json!({})),
+        ("graph.node.delete", json!({"ids": [placeholder.0]})),
+        ("edit.undo", json!({})),
+    ] {
+        let _ = execute(&mut s, id, &params);
+    }
+    for spec in command_specs().iter().filter(|spec| !spec.id.starts_with("file.")) {
+        let _ = execute(&mut s, spec.id, &json!({}));
+    }
+    s.cook();
+
+    run(&mut s, "file.newPackage", json!({}));
+    assert!(s.load_warnings.is_empty(), "a new package clears the warnings");
+}
+
 /// Every command, run with empty and hostile params, returns Ok or Err but never panics.
 #[test]
 fn panic_hunt() {
@@ -186,4 +315,102 @@ fn camera_prefs_bound_the_pan_and_survive_hostile_values() {
     s.set_camera_prefs(CameraPrefs { pan_limit: f32::NAN, pan_speed: -1.0 });
     assert_eq!(s.camera, CameraPrefs::default());
     assert_eq!(CameraPrefs { pan_limit: f32::INFINITY, pan_speed: 2.0 }.sanitized().pan_speed, 2.0);
+}
+
+#[test]
+fn a_wire_splits_with_a_reroute_dot_and_deletes() {
+    let mut s = sample_session();
+    run(&mut s, "file.new", json!({"template": "empty"}));
+    let a = run(&mut s, "graph.node.add", json!({"def": "clouds_1", "at": [0, 0]}))["id"].as_u64().unwrap();
+    let b = run(&mut s, "graph.node.add", json!({"def": "levels", "at": [400, 0]}))["id"].as_u64().unwrap();
+    run(&mut s, "graph.connect", json!({"from": a, "to": b}));
+    let dot = run(&mut s, "graph.wire.insertDot", json!({"to": b, "toPort": "input", "at": [200, 80]}))["id"].as_u64().unwrap();
+    let g = s.graph().unwrap();
+    let d = materialcraft_engine::core::NodeId(dot);
+    assert_eq!(g.node(d).unwrap().def, "dot");
+    assert_eq!(g.node(d).unwrap().pos, [200.0, 80.0]);
+    assert_eq!(g.connections.len(), 2);
+    assert_eq!(g.input_of(d, "input").unwrap().from.0, a);
+    assert_eq!(g.input_of(materialcraft_engine::core::NodeId(b), "input").unwrap().from.0, dot);
+    assert_eq!(s.selection, vec![d]);
+    // The material still cooks through the dot.
+    s.cook();
+    assert!(s.cooked.nodes.values().all(|r| r.error.is_none()));
+    // One undo step restores the straight wire.
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(s.graph().unwrap().nodes.len(), 2);
+    assert_eq!(s.graph().unwrap().input_of(materialcraft_engine::core::NodeId(b), "input").unwrap().from.0, a);
+    // No wire there: an error, nothing changes.
+    assert!(execute(&mut s, "graph.wire.insertDot", &json!({"to": a, "toPort": "input"})).is_err());
+    // Deleting the wire.
+    run(&mut s, "graph.disconnect", json!({"to": b, "toPort": "input"}));
+    assert!(s.graph().unwrap().connections.is_empty());
+}
+
+#[test]
+fn every_template_is_opaque_in_the_3d_view() {
+    // The 3D view sees through a base color whose alpha is below one: the templates must not.
+    let mut s = sample_session();
+    s.preview_size = Some(64);
+    for (id, _) in materialcraft_engine::samples::TEMPLATES {
+        run(&mut s, "file.new", json!({"template": id, "size": 64}));
+        s.cook();
+        for (usage, img) in s.material_maps() {
+            if usage == "baseColor" && !img.is_gray() {
+                let min = img.data.chunks(4).map(|p| p[3]).fold(f32::INFINITY, f32::min);
+                assert!(min >= 0.999, "{id}: base color alpha goes down to {min}");
+            }
+        }
+    }
+}
+
+#[test]
+fn selected_wires_swap_their_sources_and_delete_together() {
+    use materialcraft_engine::core::NodeId;
+    let mut s = sample_session();
+    run(&mut s, "file.new", json!({"template": "empty"}));
+    let a = run(&mut s, "graph.node.add", json!({"def": "clouds_1", "at": [0, 0]}))["id"].as_u64().unwrap();
+    let b = run(&mut s, "graph.node.add", json!({"def": "perlin_noise", "at": [0, 200]}))["id"].as_u64().unwrap();
+    let m = run(&mut s, "graph.node.add", json!({"def": "checker", "at": [0, 400]}))["id"].as_u64().unwrap();
+    let blend = run(&mut s, "graph.node.add", json!({"def": "blend", "at": [300, 100]}))["id"].as_u64().unwrap();
+    run(&mut s, "graph.connect", json!({"from": a, "to": blend, "toPort": "foreground"}));
+    run(&mut s, "graph.connect", json!({"from": b, "to": blend, "toPort": "background"}));
+    run(&mut s, "graph.connect", json!({"from": m, "to": blend, "toPort": "mask"}));
+    let src = |s: &Session, port: &str| s.graph().unwrap().input_of(NodeId(blend), port).unwrap().from.0;
+    let fg_bg = json!({"wires": [{"to": blend, "toPort": "background"}, {"to": blend, "toPort": "foreground"}]});
+    // Two wires swap, whatever order they are listed in; the other input is left alone.
+    run(&mut s, "graph.wire.swap", fg_bg.clone());
+    assert_eq!((src(&s, "foreground"), src(&s, "background"), src(&s, "mask")), (b, a, m));
+    run(&mut s, "graph.wire.swap", fg_bg.clone());
+    assert_eq!((src(&s, "foreground"), src(&s, "background")), (a, b));
+    // Three wires reverse in input order: foreground <-> mask, background stays.
+    let all = json!({"wires": [{"to": blend, "toPort": "foreground"}, {"to": blend, "toPort": "background"}, {"to": blend, "toPort": "mask"}]});
+    run(&mut s, "graph.wire.swap", all.clone());
+    assert_eq!((src(&s, "foreground"), src(&s, "background"), src(&s, "mask")), (m, b, a));
+    // One undo step each.
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!((src(&s, "foreground"), src(&s, "background"), src(&s, "mask")), (a, b, m));
+    // Bad requests change nothing.
+    for bad in [
+        json!({}),
+        json!({"wires": [{"to": blend, "toPort": "foreground"}]}),
+        json!({"wires": [{"to": blend, "toPort": "foreground"}, {"to": blend, "toPort": "foreground"}]}),
+        json!({"wires": [{"to": blend, "toPort": "foreground"}, {"to": a, "toPort": "input"}]}),
+    ] {
+        assert!(execute(&mut s, "graph.wire.swap", &bad).is_err(), "{bad}");
+    }
+    assert_eq!(src(&s, "foreground"), a);
+    // A swap that would make a cycle is refused and rolled back: blend -> levels, then swap the
+    // wire into levels with the wire into blend's foreground.
+    let lv = run(&mut s, "graph.node.add", json!({"def": "levels", "at": [600, 100]}))["id"].as_u64().unwrap();
+    run(&mut s, "graph.connect", json!({"from": blend, "to": lv}));
+    let cyc = json!({"wires": [{"to": blend, "toPort": "foreground"}, {"to": lv, "toPort": "input"}]});
+    assert!(execute(&mut s, "graph.wire.swap", &cyc).is_err());
+    assert_eq!(src(&s, "foreground"), a);
+    assert_eq!(s.graph().unwrap().connections.len(), 4);
+    // Deleting several wires is one step.
+    run(&mut s, "graph.wire.delete", all);
+    assert_eq!(s.graph().unwrap().connections.len(), 1);
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(s.graph().unwrap().connections.len(), 4);
 }

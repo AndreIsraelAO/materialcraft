@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 use egui::vec2;
-use egui_kittest::Harness;
+use egui_kittest::{Harness, kittest::Queryable};
 use materialcraft_ui_egui::{MaterialCraftApp, UiState};
 use serde_json::json;
 
@@ -31,6 +31,34 @@ fn save(h: &mut Harness<'static, MaterialCraftApp>, dir: &std::path::Path, name:
     let img = h.render().expect("render");
     img.save(dir.join(format!("{name}.png"))).expect("save");
     println!("wrote {}", dir.join(format!("{name}.png")).display());
+}
+
+/// The startup graph stays empty through real UI frames; templates are still available on demand.
+#[test]
+#[ignore = "requires an offscreen GPU; run explicitly with --ignored"]
+fn empty_startup_can_create_a_template() {
+    let app = MaterialCraftApp::headless(materialcraft_engine::new_session(), UiState::default());
+    let mut h = harness(app, 1600.0, 960.0);
+    settle(&mut h, 40);
+    assert_eq!(h.state().session.pkg.graphs.len(), 1);
+    assert!(h.state().session.graph().unwrap().nodes.is_empty());
+    assert!(h.state().graph.rects.is_empty());
+    if let Some(dir) = std::env::var_os("MC_SNAPSHOT_DIR").map(std::path::PathBuf::from) {
+        std::fs::create_dir_all(&dir).unwrap();
+        save(&mut h, &dir, "empty-startup");
+    }
+    h.get_by_label("New graph...").click();
+    settle(&mut h, 4);
+    h.get_by_label("Brick wall").click();
+    settle(&mut h, 4);
+    h.get_by_label("Create").click();
+    settle(&mut h, 40);
+    assert_eq!(h.state().session.pkg.graphs.len(), 2);
+    assert!(!h.state().session.graph().unwrap().nodes.is_empty());
+    assert!(!h.state().graph.rects.is_empty());
+    if let Some(dir) = std::env::var_os("MC_SNAPSHOT_DIR").map(std::path::PathBuf::from) {
+        save(&mut h, &dir, "chosen-template");
+    }
 }
 
 #[test]
@@ -63,6 +91,26 @@ fn snapshots() {
     save(&mut h, &dir, "new-graph");
     h.state_mut().ui.windows.new_graph = false;
 
+    // A cut-out material in the 3D view (an opacity output), a reroute dot pulled out of a wire
+    // and another wire selected; then the alpha channel view.
+    h.state_mut().run("file.new", json!({"template": "wood", "size": 512}));
+    let holes = h.state_mut().run("graph.node.add", json!({"def": "grid_lines", "at": [0, -260]})).unwrap()["id"].as_u64().unwrap();
+    let out = h.state_mut().run("graph.node.add", json!({"def": "output", "at": [420, -260], "connectFrom": {"node": holes}, "params": {"usage": 7}})).unwrap()
+        ["id"]
+        .as_u64()
+        .unwrap();
+    h.state_mut().run("graph.wire.insertDot", json!({"to": out, "toPort": "input", "at": [210, -330]}));
+    let wire = h.state().session.graph().unwrap().connections.iter().find(|c| c.to.0 != out).map(|c| (c.to, c.to_port.clone()));
+    h.state_mut().graph.selected_wires = wire.into_iter().collect();
+    h.state_mut().run("view.3d", json!({"scene": "sphere"}));
+    h.state_mut().ui.frame_all = true;
+    settle(&mut h, 60);
+    save(&mut h, &dir, "alpha-transparency");
+    h.state_mut().run("view.3d", json!({"alphaView": true}));
+    settle(&mut h, 40);
+    save(&mut h, &dir, "alpha-channel");
+    h.state_mut().run("view.3d", json!({"alphaView": false, "scene": "rounded_cube"}));
+
     // A pixel processor drawing rings, with its function graph open.
     h.state_mut().run("file.new", json!({"template": "empty", "name": "Rings"}));
     let f = json!({"t": "function", "v": {"nodes": [
@@ -85,6 +133,31 @@ fn snapshots() {
     h.state_mut().ui.frame_all = true;
     settle(&mut h, 40);
     save(&mut h, &dir, "function-editor");
+    h.state_mut().fn_editor = None;
+
+    // The Levels editor: the input histogram under the transfer curve, with its handles.
+    h.state_mut().run("file.new", json!({"template": "stone_tiles", "size": 512}));
+    let levels = {
+        let g = h.state().session.graph().unwrap();
+        g.nodes.iter().find(|n| n.def == "levels" && g.connections.iter().any(|c| c.to == n.id)).map(|n| n.id.0)
+    };
+    if let Some(id) = levels {
+        h.state_mut().run("graph.select", json!({"ids": [id]}));
+        h.state_mut().run("graph.node.param", json!({"id": id, "param": "in_low", "value": 0.3}));
+        h.state_mut().run("graph.node.param", json!({"id": id, "param": "in_mid", "value": 0.35}));
+        h.state_mut().run("graph.node.param", json!({"id": id, "param": "in_high", "value": 0.85}));
+        h.state_mut().run("view.2d", json!({"node": id}));
+    }
+    h.state_mut().ui.frame_all = true;
+    settle(&mut h, 40);
+    save(&mut h, &dir, "levels-editor");
+
+    // An SBS file with nodes MaterialCraft doesn't have: placeholders on the canvas, the warnings
+    // in the Console, which comes forward by itself.
+    let sample = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/sbs/all_nodes.sbs");
+    materialcraft_ui_egui::windows::open_path(h.state_mut(), sample.to_str().unwrap());
+    settle(&mut h, 60);
+    save(&mut h, &dir, "sbs-warnings");
 }
 
 /// Steady-state UI build time per frame with each panel closed in turn (release):

@@ -29,7 +29,7 @@ pub(crate) fn specs() -> Vec<CommandSpec> {
             "3D view settings",
             [],
             None,
-            "{scene? (cube|cylinder|plane|sphere|material_ball|rounded_cube|torus), tiling?, yaw?, pitch?, distance?, target? ([x, y, z] orbit point in mesh radii from its center, within the pan limit preference), environment? (studio|sunset|overcast|night), envRotation?, exposure?, heightScale?, axis?, grid?}",
+            "{scene? (cube|cylinder|plane|sphere|material_ball|rounded_cube|torus), tiling?, yaw?, pitch?, distance?, target? ([x, y, z] orbit point in mesh radii from its center, within the pan limit preference), environment? (studio|sunset|overcast|night), envRotation?, exposure?, heightScale?, axis?, grid?, transparency? (see through where alpha < 1), alphaView? (show the alpha channel)}",
             always,
             view3d
         ),
@@ -143,6 +143,12 @@ fn view3d(s: &mut Session, p: &J) -> Result<J> {
     }
     if let Some(b) = boolp(p, "grid") {
         v.show_grid = b;
+    }
+    if let Some(b) = boolp(p, "transparency") {
+        v.transparency = b;
+    }
+    if let Some(b) = boolp(p, "alphaView") {
+        v.alpha_view = b;
     }
     Ok(serde_json::to_value(&s.view3d).unwrap_or(J::Null))
 }

@@ -182,6 +182,11 @@ pub struct Settings {
     pub ao_rays: u32,
     /// Strength of a shadow-casting key light from the camera's upper left (0 = off).
     pub key_light: f32,
+    /// See through the surface where the material's alpha (the opacity output, else the base
+    /// color's alpha channel) is below one: what lies behind, back faces included, shows through.
+    pub transparency: bool,
+    /// Show the material's alpha channel on the mesh, unlit (white = opaque, black = clear).
+    pub alpha_view: bool,
 }
 
 impl Default for Settings {
@@ -199,6 +204,8 @@ impl Default for Settings {
             supersample: 1,
             ao_rays: 0,
             key_light: 0.0,
+            transparency: true,
+            alpha_view: false,
         }
     }
 }
@@ -257,10 +264,23 @@ fn rotate_y(v: Vec3, deg: f32) -> Vec3 {
     Vec3::new(v.x * c + v.z * s, v.y, -v.x * s + v.z * c)
 }
 
+/// The material's alpha at `uv`: the opacity output, else the base color's alpha channel, else
+/// opaque.
+fn alpha(maps: &Maps, uv: Vec2) -> f32 {
+    let a = match (&maps.opacity, &maps.base_color) {
+        (Some(o), _) => o.sample_gray(uv.x, uv.y, true),
+        (None, Some(b)) if !b.is_gray() => b.sample(uv.x, uv.y, true)[3],
+        _ => 1.0,
+    };
+    if a.is_finite() { a.clamp(0.0, 1.0) } else { 1.0 }
+}
+
+/// Transparent surfaces a ray passes through before it gives up (what is left shows the
+/// background).
+const MAX_LAYERS: usize = 8;
+
 /// Per-pixel inputs of [`shade`] beyond the camera ray.
 struct Px {
-    /// Backdrop color (seen through transparent areas).
-    bg: Vec3,
     /// Direction toward the key light.
     key: Vec3,
     /// Random rotation of the ambient occlusion ray pattern.
@@ -301,8 +321,16 @@ fn direct(n: Vec3, v: Vec3, l: Vec3, base: Vec3, f0: Vec3, metal: f32, rough: f3
     (diff + spec) * ndl
 }
 
-/// Shade one camera ray; `None` = missed the mesh.
-fn shade(scene: &Scene, maps: &Maps, light: &Lighting, s: &Settings, origin: Vec3, dir: Vec3, px: &Px) -> Option<Vec3> {
+/// A shaded surface point: linear color (or the alpha value in [`Settings::alpha_view`]), its
+/// alpha and the ray distance.
+struct Shaded {
+    color: Vec3,
+    alpha: f32,
+    t: f32,
+}
+
+/// Shade the first surface along one ray; `None` = missed the mesh.
+fn shade(scene: &Scene, maps: &Maps, light: &Lighting, s: &Settings, origin: Vec3, dir: Vec3, px: &Px) -> Option<Shaded> {
     let hit = scene.bvh.closest(origin, dir, f32::MAX)?;
     let m = &scene.mesh;
     let [i0, i1, i2] = m.tri(hit.tri as usize)?;
@@ -310,6 +338,8 @@ fn shade(scene: &Scene, maps: &Maps, light: &Lighting, s: &Settings, origin: Vec
     let w0 = 1.0 - w1 - w2;
     let lerp3 = |a: Vec3, b: Vec3, c: Vec3| a * w0 + b * w1 + c * w2;
     let nrm = lerp3(*m.normals.get(i0)?, *m.normals.get(i1)?, *m.normals.get(i2)?).normalize_or_zero();
+    // A back face (seen through a transparent front, or under an open mesh) faces the viewer.
+    let nrm = if nrm.dot(dir) > 0.0 { -nrm } else { nrm };
     let (t0, t1, t2) = (*m.tangents.get(i0)?, *m.tangents.get(i1)?, *m.tangents.get(i2)?);
     let tan = (t0.truncate() * w0 + t1.truncate() * w1 + t2.truncate() * w2).normalize_or_zero();
     let sign = if t0.w < 0.0 { -1.0 } else { 1.0 };
@@ -345,6 +375,10 @@ fn shade(scene: &Scene, maps: &Maps, light: &Lighting, s: &Settings, origin: Vec
             cur -= delta;
         }
         uv = cur;
+    }
+    let a = alpha(maps, uv);
+    if s.alpha_view {
+        return Some(Shaded { color: Vec3::splat(a), alpha: 1.0, t: hit.t });
     }
     let base = tex(&maps.base_color, uv).map_or(Vec3::splat(0.5), |c| Vec3::new(c[0], c[1], c[2]));
     let rough = tex_gray(&maps.roughness, uv, 0.5).clamp(0.02, 1.0);
@@ -385,11 +419,27 @@ fn shade(scene: &Scene, maps: &Maps, light: &Lighting, s: &Settings, origin: Vec
     if let Some(e) = tex(&maps.emissive, uv) {
         c += Vec3::new(e[0], e[1], e[2]);
     }
-    if let Some(o) = &maps.opacity {
-        let a = o.sample_gray(uv.x, uv.y, true).clamp(0.0, 1.0);
-        c = c * a + px.bg * (1.0 - a);
+    Some(Shaded { color: c, alpha: if s.transparency { a } else { 1.0 }, t: hit.t })
+}
+
+/// Follow one camera ray through up to [`MAX_LAYERS`] transparent surfaces, compositing front to
+/// back (`miss` is what shows behind the mesh). Shaded colors are scaled by the exposure `k`.
+#[allow(clippy::too_many_arguments)]
+fn trace(scene: &Scene, maps: &Maps, light: &Lighting, s: &Settings, origin: Vec3, dir: Vec3, px: &Px, k: f32, miss: Vec3) -> Vec3 {
+    let mut acc = Vec3::ZERO;
+    let mut through = 1.0;
+    let mut o = origin;
+    let step = scene.radius * 1e-4;
+    for _ in 0..MAX_LAYERS {
+        let Some(h) = shade(scene, maps, light, s, o, dir, px) else { return acc + miss * through };
+        acc += h.color * k * h.alpha * through;
+        through *= 1.0 - h.alpha;
+        if through < 1e-3 {
+            return acc;
+        }
+        o += dir * (h.t + step);
     }
-    Some(c)
+    acc + miss * through
 }
 
 /// The studio backdrop at screen position `p` (−1..1): a soft vignette (linear).
@@ -440,18 +490,27 @@ pub fn render_cancellable(scene: &Scene, maps: &Maps, light: &Lighting, s: &Sett
                     let py = 1.0 - (y as f32 + (sy as f32 + 0.5) / ss as f32) / h as f32 * 2.0;
                     let ray = cam.ray(Vec2::new(px, py), aspect);
                     let bg = backdrop(Vec2::new(px, py));
-                    let p = Px { bg, key, jitter: jitter(x as u32 * ss + sx, y as u32 * ss + sy) };
-                    acc += match shade(scene, maps, light, s, ray.origin, ray.dir, &p) {
-                        Some(c) => c * k,
-                        None => match (s.show_env, bg_env) {
-                            (true, Some(e)) => e.sample(rotate_y(ray.dir, -s.env_rotation)) * k,
-                            _ => bg,
-                        },
+                    let p = Px { key, jitter: jitter(x as u32 * ss + sx, y as u32 * ss + sy) };
+                    let miss = match (s.show_env, bg_env) {
+                        (true, Some(e)) => e.sample(rotate_y(ray.dir, -s.env_rotation)) * k,
+                        _ => bg,
+                    };
+                    acc += if s.alpha_view {
+                        // Display values: the alpha as is, the background tone mapped.
+                        match shade(scene, maps, light, s, ray.origin, ray.dir, &p) {
+                            Some(h) => h.color,
+                            None => miss.map(|v| linear_to_srgb(aces(v))),
+                        }
+                    } else {
+                        trace(scene, maps, light, s, ray.origin, ray.dir, &p, k, miss)
                     };
                 }
             }
             let c = acc / (ss * ss) as f32;
-            let q = |v: f32| (linear_to_srgb(aces(v)) * 255.0 + 0.5) as u8;
+            let q = |v: f32| {
+                let d = if s.alpha_view { v } else { linear_to_srgb(aces(v)) };
+                (d.clamp(0.0, 1.0) * 255.0 + 0.5) as u8
+            };
             if let Some(px) = row.get_mut(x * 4..x * 4 + 4) {
                 px.copy_from_slice(&[q(c.x), q(c.y), q(c.z), 255]);
             }
@@ -482,6 +541,29 @@ mod tests {
             let c = if id == "torus" { ((24 * 64 + 20) * 4) as usize } else { ((24 * 64 + 32) * 4) as usize };
             assert!(px[c] > px[c + 1], "{id}: center is not red ({:?})", &px[c..c + 3]);
         }
+    }
+
+    #[test]
+    fn alpha_shows_what_lies_behind_and_the_alpha_view_shows_the_channel() {
+        let (scene, light) = (Scene::builtin("sphere"), Lighting::new("studio"));
+        let red = |a: f32| Maps { base_color: Some(Image::filled(16, 16, Kind::Color, [0.8, 0.1, 0.1, a])), ..Maps::default() };
+        let c = ((24 * 64 + 32) * 4) as usize;
+        let s = Settings::default();
+        let opaque = render(&scene, &red(1.0), &light, &s, 64, 48);
+        let clear = render(&scene, &red(0.0), &light, &s, 64, 48);
+        assert!(opaque[c] > opaque[c + 1] + 40, "opaque center is red: {:?}", &opaque[c..c + 3]);
+        // Fully clear: the backdrop shows through both the front and the back of the sphere.
+        let bg = backdrop(Vec2::new(32.5 / 64.0 * 2.0 - 1.0, 1.0 - 24.5 / 48.0 * 2.0));
+        let bg = (linear_to_srgb(aces(bg.x)) * 255.0 + 0.5) as u8;
+        assert!(clear[c..c + 3].iter().all(|v| v.abs_diff(bg) <= 1), "clear {:?} vs backdrop {bg}", &clear[c..c + 3]);
+        // Transparency off: alpha is ignored.
+        assert_eq!(render(&scene, &red(0.0), &light, &Settings { transparency: false, ..s }, 64, 48), opaque);
+        // An opacity output wins over the base color's alpha.
+        let half = Maps { opacity: Some(Image::filled(16, 16, Kind::Gray, [0.5; 4])), ..red(1.0) };
+        let px = render(&scene, &half, &light, &Settings { alpha_view: true, ..s }, 64, 48);
+        assert!(px[c].abs_diff(128) <= 1 && px[c] == px[c + 1], "alpha view: {:?}", &px[c..c + 3]);
+        let px = render(&scene, &red(1.0), &light, &Settings { alpha_view: true, ..s }, 64, 48);
+        assert_eq!(&px[c..c + 3], &[255, 255, 255]);
     }
 
     #[test]

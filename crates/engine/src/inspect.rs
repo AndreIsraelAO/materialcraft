@@ -49,7 +49,7 @@ pub fn session(s: &Session, graph: Option<usize>) -> J {
         })
     });
     json!({
-        "package": {"name": s.pkg.name, "path": s.path, "modified": s.modified, "resources": s.pkg.resources.iter().map(|r| json!({"name": r.name, "bytes": r.bytes.len()})).collect::<Vec<_>>()},
+        "package": {"name": s.pkg.name, "path": s.path, "modified": s.modified, "warnings": s.load_warnings, "resources": s.pkg.resources.iter().map(|r| json!({"name": r.name, "bytes": r.bytes.len()})).collect::<Vec<_>>()},
         "graphs": s.pkg.graphs.iter().enumerate().map(|(i, g)| json!({"index": i, "name": g.name, "nodes": g.nodes.len(), "kind": g.kind})).collect::<Vec<_>>(),
         "openGraph": s.graph,
         "graph": graph_json,
