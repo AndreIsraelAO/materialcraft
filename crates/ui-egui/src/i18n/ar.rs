@@ -59,7 +59,10 @@ pub const TABLE: &[(&str, &str)] = &[
     ("Boolean", "منطقي"),
     ("Brick wall", "جدار طوب"),
     ("Brightness", "السطوع"),
-    ("Build tileable materials from noises, patterns and filters, see them live in 2D and 3D, and export the maps for any engine.", "أنشئ مواد قابلة للتكرار من التشويش والأنماط والمرشحات، وعاينها مباشرة ثنائية وثلاثية الأبعاد، وصدّر الخرائط لأي محرك."),
+    (
+        "Build tileable materials from noises, patterns and filters, see them live in 2D and 3D, and export the maps for any engine.",
+        "أنشئ مواد قابلة للتكرار من التشويش والأنماط والمرشحات، وعاينها مباشرة ثنائية وثلاثية الأبعاد، وصدّر الخرائط لأي محرك.",
+    ),
     ("Cache", "الذاكرة المؤقتة"),
     ("Camera", "الكاميرا"),
     ("Cancel", "إلغاء"),
@@ -285,7 +288,10 @@ pub const TABLE: &[(&str, &str)] = &[
     ("Resources", "الموارد"),
     ("Revert", "استرجاع"),
     ("Right-click a node parameter > Expose as graph input", "انقر بزر الفأرة الأيمن على معلمة العقدة > كشف كمدخل للمخطط"),
-    ("Right-click or Space to add operations; drag from an output dot to an input; the starred node is the result.", "انقر بزر الفأرة الأيمن أو مفتاح المسافة لإضافة عمليات؛ اسحب من نقطة المخرج إلى المدخل؛ العقدة المميزة بنجمة هي النتيجة."),
+    (
+        "Right-click or Space to add operations; drag from an output dot to an input; the starred node is the result.",
+        "انقر بزر الفأرة الأيمن أو مفتاح المسافة لإضافة عمليات؛ اسحب من نقطة المخرج إلى المدخل؛ العقدة المميزة بنجمة هي النتيجة.",
+    ),
     ("Rotation", "التدوير"),
     ("Rounded cube", "مكعب مدور الحواف"),
     ("Rusty metal", "معدن صدئ"),

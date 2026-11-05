@@ -23,10 +23,8 @@ pub struct Language {
 
 const COUNT: usize = 2;
 
-pub static LANGUAGES: [Language; COUNT] = [
-    Language { code: "en", name: "English", english: "English", table: &[] },
-    Language { code: "ar", name: "العربية", english: "Arabic", table: ar::TABLE },
-];
+pub static LANGUAGES: [Language; COUNT] =
+    [Language { code: "en", name: "English", english: "English", table: &[] }, Language { code: "ar", name: "العربية", english: "Arabic", table: ar::TABLE }];
 
 static MAPS: [OnceLock<HashMap<&'static str, &'static str>>; COUNT] = [const { OnceLock::new() }; COUNT];
 static CURRENT: AtomicUsize = AtomicUsize::new(0);
