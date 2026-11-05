@@ -260,6 +260,8 @@ impl Headless {
             height_scale: v.height_scale,
             show_env: false,
             supersample: 2,
+            transparency: v.transparency,
+            alpha_view: v.alpha_view,
             ..Settings::default()
         };
         let (w, h) = (o.width.unwrap_or(1024).clamp(16, max), o.height.unwrap_or(768).clamp(16, max));

@@ -85,6 +85,10 @@ fn node_props(app: &mut MaterialCraftApp, ui: &mut Ui, n: &materialcraft_engine:
         return;
     }
     section(ui, "specific", tr("Specific parameters"), |ui| {
+        if n.def == "levels" {
+            crate::levels_editor::show(app, ui, n);
+            ui.add_space(6.0);
+        }
         let exposed: Vec<(String, String)> =
             app.session.graph().map(|g| g.exposed.iter().map(|e| (e.id.clone(), e.label.clone())).collect()).unwrap_or_default();
         for p in &def.params {

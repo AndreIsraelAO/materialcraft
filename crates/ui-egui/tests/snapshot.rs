@@ -91,6 +91,26 @@ fn snapshots() {
     save(&mut h, &dir, "new-graph");
     h.state_mut().ui.windows.new_graph = false;
 
+    // A cut-out material in the 3D view (an opacity output), a reroute dot pulled out of a wire
+    // and another wire selected; then the alpha channel view.
+    h.state_mut().run("file.new", json!({"template": "wood", "size": 512}));
+    let holes = h.state_mut().run("graph.node.add", json!({"def": "grid_lines", "at": [0, -260]})).unwrap()["id"].as_u64().unwrap();
+    let out = h.state_mut().run("graph.node.add", json!({"def": "output", "at": [420, -260], "connectFrom": {"node": holes}, "params": {"usage": 7}})).unwrap()
+        ["id"]
+        .as_u64()
+        .unwrap();
+    h.state_mut().run("graph.wire.insertDot", json!({"to": out, "toPort": "input", "at": [210, -330]}));
+    let wire = h.state().session.graph().unwrap().connections.iter().find(|c| c.to.0 != out).map(|c| (c.to, c.to_port.clone()));
+    h.state_mut().graph.selected_wires = wire.into_iter().collect();
+    h.state_mut().run("view.3d", json!({"scene": "sphere"}));
+    h.state_mut().ui.frame_all = true;
+    settle(&mut h, 60);
+    save(&mut h, &dir, "alpha-transparency");
+    h.state_mut().run("view.3d", json!({"alphaView": true}));
+    settle(&mut h, 40);
+    save(&mut h, &dir, "alpha-channel");
+    h.state_mut().run("view.3d", json!({"alphaView": false, "scene": "rounded_cube"}));
+
     // A pixel processor drawing rings, with its function graph open.
     h.state_mut().run("file.new", json!({"template": "empty", "name": "Rings"}));
     let f = json!({"t": "function", "v": {"nodes": [
@@ -113,6 +133,24 @@ fn snapshots() {
     h.state_mut().ui.frame_all = true;
     settle(&mut h, 40);
     save(&mut h, &dir, "function-editor");
+    h.state_mut().fn_editor = None;
+
+    // The Levels editor: the input histogram under the transfer curve, with its handles.
+    h.state_mut().run("file.new", json!({"template": "stone_tiles", "size": 512}));
+    let levels = {
+        let g = h.state().session.graph().unwrap();
+        g.nodes.iter().find(|n| n.def == "levels" && g.connections.iter().any(|c| c.to == n.id)).map(|n| n.id.0)
+    };
+    if let Some(id) = levels {
+        h.state_mut().run("graph.select", json!({"ids": [id]}));
+        h.state_mut().run("graph.node.param", json!({"id": id, "param": "in_low", "value": 0.3}));
+        h.state_mut().run("graph.node.param", json!({"id": id, "param": "in_mid", "value": 0.35}));
+        h.state_mut().run("graph.node.param", json!({"id": id, "param": "in_high", "value": 0.85}));
+        h.state_mut().run("view.2d", json!({"node": id}));
+    }
+    h.state_mut().ui.frame_all = true;
+    settle(&mut h, 40);
+    save(&mut h, &dir, "levels-editor");
 
     // An SBS file with nodes MaterialCraft doesn't have: placeholders on the canvas, the warnings
     // in the Console, which comes forward by itself.

@@ -340,3 +340,101 @@ fn camera_prefs_bound_the_pan_and_survive_hostile_values() {
     assert_eq!(s.camera, CameraPrefs::default());
     assert_eq!(CameraPrefs { pan_limit: f32::INFINITY, pan_speed: 2.0 }.sanitized().pan_speed, 2.0);
 }
+
+#[test]
+fn a_wire_splits_with_a_reroute_dot_and_deletes() {
+    let mut s = sample_session();
+    run(&mut s, "file.new", json!({"template": "empty"}));
+    let a = run(&mut s, "graph.node.add", json!({"def": "clouds_1", "at": [0, 0]}))["id"].as_u64().unwrap();
+    let b = run(&mut s, "graph.node.add", json!({"def": "levels", "at": [400, 0]}))["id"].as_u64().unwrap();
+    run(&mut s, "graph.connect", json!({"from": a, "to": b}));
+    let dot = run(&mut s, "graph.wire.insertDot", json!({"to": b, "toPort": "input", "at": [200, 80]}))["id"].as_u64().unwrap();
+    let g = s.graph().unwrap();
+    let d = materialcraft_engine::core::NodeId(dot);
+    assert_eq!(g.node(d).unwrap().def, "dot");
+    assert_eq!(g.node(d).unwrap().pos, [200.0, 80.0]);
+    assert_eq!(g.connections.len(), 2);
+    assert_eq!(g.input_of(d, "input").unwrap().from.0, a);
+    assert_eq!(g.input_of(materialcraft_engine::core::NodeId(b), "input").unwrap().from.0, dot);
+    assert_eq!(s.selection, vec![d]);
+    // The material still cooks through the dot.
+    s.cook();
+    assert!(s.cooked.nodes.values().all(|r| r.error.is_none()));
+    // One undo step restores the straight wire.
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(s.graph().unwrap().nodes.len(), 2);
+    assert_eq!(s.graph().unwrap().input_of(materialcraft_engine::core::NodeId(b), "input").unwrap().from.0, a);
+    // No wire there: an error, nothing changes.
+    assert!(execute(&mut s, "graph.wire.insertDot", &json!({"to": a, "toPort": "input"})).is_err());
+    // Deleting the wire.
+    run(&mut s, "graph.disconnect", json!({"to": b, "toPort": "input"}));
+    assert!(s.graph().unwrap().connections.is_empty());
+}
+
+#[test]
+fn every_template_is_opaque_in_the_3d_view() {
+    // The 3D view sees through a base color whose alpha is below one: the templates must not.
+    let mut s = sample_session();
+    s.preview_size = Some(64);
+    for (id, _) in materialcraft_engine::samples::TEMPLATES {
+        run(&mut s, "file.new", json!({"template": id, "size": 64}));
+        s.cook();
+        for (usage, img) in s.material_maps() {
+            if usage == "baseColor" && !img.is_gray() {
+                let min = img.data.chunks(4).map(|p| p[3]).fold(f32::INFINITY, f32::min);
+                assert!(min >= 0.999, "{id}: base color alpha goes down to {min}");
+            }
+        }
+    }
+}
+
+#[test]
+fn selected_wires_swap_their_sources_and_delete_together() {
+    use materialcraft_engine::core::NodeId;
+    let mut s = sample_session();
+    run(&mut s, "file.new", json!({"template": "empty"}));
+    let a = run(&mut s, "graph.node.add", json!({"def": "clouds_1", "at": [0, 0]}))["id"].as_u64().unwrap();
+    let b = run(&mut s, "graph.node.add", json!({"def": "perlin_noise", "at": [0, 200]}))["id"].as_u64().unwrap();
+    let m = run(&mut s, "graph.node.add", json!({"def": "checker", "at": [0, 400]}))["id"].as_u64().unwrap();
+    let blend = run(&mut s, "graph.node.add", json!({"def": "blend", "at": [300, 100]}))["id"].as_u64().unwrap();
+    run(&mut s, "graph.connect", json!({"from": a, "to": blend, "toPort": "foreground"}));
+    run(&mut s, "graph.connect", json!({"from": b, "to": blend, "toPort": "background"}));
+    run(&mut s, "graph.connect", json!({"from": m, "to": blend, "toPort": "mask"}));
+    let src = |s: &Session, port: &str| s.graph().unwrap().input_of(NodeId(blend), port).unwrap().from.0;
+    let fg_bg = json!({"wires": [{"to": blend, "toPort": "background"}, {"to": blend, "toPort": "foreground"}]});
+    // Two wires swap, whatever order they are listed in; the other input is left alone.
+    run(&mut s, "graph.wire.swap", fg_bg.clone());
+    assert_eq!((src(&s, "foreground"), src(&s, "background"), src(&s, "mask")), (b, a, m));
+    run(&mut s, "graph.wire.swap", fg_bg.clone());
+    assert_eq!((src(&s, "foreground"), src(&s, "background")), (a, b));
+    // Three wires reverse in input order: foreground <-> mask, background stays.
+    let all = json!({"wires": [{"to": blend, "toPort": "foreground"}, {"to": blend, "toPort": "background"}, {"to": blend, "toPort": "mask"}]});
+    run(&mut s, "graph.wire.swap", all.clone());
+    assert_eq!((src(&s, "foreground"), src(&s, "background"), src(&s, "mask")), (m, b, a));
+    // One undo step each.
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!((src(&s, "foreground"), src(&s, "background"), src(&s, "mask")), (a, b, m));
+    // Bad requests change nothing.
+    for bad in [
+        json!({}),
+        json!({"wires": [{"to": blend, "toPort": "foreground"}]}),
+        json!({"wires": [{"to": blend, "toPort": "foreground"}, {"to": blend, "toPort": "foreground"}]}),
+        json!({"wires": [{"to": blend, "toPort": "foreground"}, {"to": a, "toPort": "input"}]}),
+    ] {
+        assert!(execute(&mut s, "graph.wire.swap", &bad).is_err(), "{bad}");
+    }
+    assert_eq!(src(&s, "foreground"), a);
+    // A swap that would make a cycle is refused and rolled back: blend -> levels, then swap the
+    // wire into levels with the wire into blend's foreground.
+    let lv = run(&mut s, "graph.node.add", json!({"def": "levels", "at": [600, 100]}))["id"].as_u64().unwrap();
+    run(&mut s, "graph.connect", json!({"from": blend, "to": lv}));
+    let cyc = json!({"wires": [{"to": blend, "toPort": "foreground"}, {"to": lv, "toPort": "input"}]});
+    assert!(execute(&mut s, "graph.wire.swap", &cyc).is_err());
+    assert_eq!(src(&s, "foreground"), a);
+    assert_eq!(s.graph().unwrap().connections.len(), 4);
+    // Deleting several wires is one step.
+    run(&mut s, "graph.wire.delete", all);
+    assert_eq!(s.graph().unwrap().connections.len(), 1);
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(s.graph().unwrap().connections.len(), 4);
+}

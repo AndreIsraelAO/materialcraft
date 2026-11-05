@@ -11,6 +11,8 @@ use crate::theme::{Accent, Brightness};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Prefs {
+    /// UI language code (`i18n::LANGUAGES`).
+    pub language: String,
     pub brightness: Brightness,
     pub accent: Accent,
     pub ui_scale: f32,
@@ -31,6 +33,7 @@ pub struct Prefs {
 impl Default for Prefs {
     fn default() -> Self {
         Prefs {
+            language: crate::i18n::os_language().into(),
             brightness: Brightness::default(),
             accent: Accent::default(),
             ui_scale: 1.0,
